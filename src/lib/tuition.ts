@@ -1,7 +1,7 @@
 import { findCountry } from "../config/countries.js";
 import { toLocal, type Currency } from "../config/fx.js";
 import { findProgramme } from "../config/programmes.js";
-import { MBA_EXAMPLE_MONTHS, PUBLISHED_TUITION, US_ONLY_TUITION, type BillingUnit, type Price } from "../config/tuition.js";
+import { MBA_EXAMPLE_MONTHS, PRICED_AS, PUBLISHED_TUITION, US_ONLY_TUITION, type BillingUnit, type Price } from "../config/tuition.js";
 
 export interface Money {
   currency: Currency;
@@ -12,6 +12,7 @@ export type TuitionQuote =
   | {
       available: true;
       programme: string;
+      specialisation?: string;
       country: string;
       usd: number;
       billing_unit: BillingUnit;
@@ -27,8 +28,9 @@ export function quoteTuition(programmeInput: string, countryInput: string): Tuit
   const countryName = country?.name ?? countryInput;
   if (!programme) return { available: false, programme: programmeInput, country: countryName, reason: "unknown_programme" };
 
-  let price: Price | undefined = country ? PUBLISHED_TUITION[country.name]?.[programme.id] : undefined;
-  if (!price && country?.name === "United States") price = US_ONLY_TUITION[programme.id];
+  const priceId = PRICED_AS[programme.id] ?? programme.id;
+  let price: Price | undefined = country ? PUBLISHED_TUITION[country.name]?.[priceId] : undefined;
+  if (!price && country?.name === "United States") price = US_ONLY_TUITION[priceId];
   if (!price || !country) return { available: false, programme: programme.name, country: countryName, reason: "not_published" };
 
   const local = (usd: number): Money | undefined =>
@@ -37,12 +39,13 @@ export function quoteTuition(programmeInput: string, countryInput: string): Tuit
   return {
     available: true,
     programme: programme.name,
+    specialisation: programme.specialisation,
     country: country.name,
     usd: price.usd,
     billing_unit: price.unit,
     local: local(price.usd),
     examples:
-      programme.id === "mba"
+      priceId === "mba"
         ? MBA_EXAMPLE_MONTHS.map((months) => ({ months, usd: price.usd * months, local: local(price.usd * months) }))
         : undefined,
   };

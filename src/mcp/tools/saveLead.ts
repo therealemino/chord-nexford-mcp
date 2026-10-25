@@ -14,7 +14,7 @@ export const saveLead = defineTool({
   ].join(" "),
   shape: {
     contact_id: contactId,
-    whatsapp_number: z.string().trim().regex(/^\+?[\d\s\-()]{7,20}$/, "must be a phone number").nullish().describe("WhatsApp number in international format, e.g. +2348030000000."),
+    whatsapp_number: z.string().trim().regex(/^\+?[\d\s\-()]{7,20}$/, "must be a phone number").nullish().describe("Phone/WhatsApp number in international format, e.g. +2348030000000, only if the person typed it. You cannot see their number."),
     full_name: z.string().trim().min(1).max(200).nullish(),
     email: z.email().max(254).nullish(),
     country: countryField.nullish(),

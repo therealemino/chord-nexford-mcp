@@ -59,6 +59,33 @@ describe("get_tuition", () => {
     expect(out).toMatchObject({ ok: true, usd: 275, local: { currency: "NGN", amount: 365_385 } });
     expect(out.agent_guidance).toMatch(/at Nexford's current rate/);
   });
+
+  it("keeps the specialisation name and stores it on the lead", async () => {
+    const { deps, db } = makeDeps();
+    const out = await callTool("get_tuition", { programme: "MBA in Fintech and Blockchain", country: "Nigeria" }, deps);
+    expect(out.agent_guidance).toMatch(/the MBA with a Fintech and Blockchain specialisation is \$275 a month/);
+    await callTool("save_lead", { contact_id: "f1", programme: "mba fintech and blockchain" }, deps);
+    expect(db.leads[0].programme).toBe("MBA with a Fintech and Blockchain specialisation");
+  });
+});
+
+describe("customer guidance formatting", () => {
+  it("every customer tool's guidance asks for WhatsApp plain text and contains no Markdown itself", async () => {
+    const { deps } = makeDeps({ now: "2026-10-26T07:00:00Z" });
+    const outs = [
+      await callTool("save_lead", { contact_id: "g1", full_name: "Ada", email: "a@example.com" }, deps),
+      await callTool("assess_eligibility", { contact_id: "g1", programme: "MBA", has_bachelors_degree: true, degree_field: "other" }, deps),
+      await callTool("get_tuition", { programme: "MBA", country: "Nigeria" }, deps),
+      await callTool("create_application_payment", { contact_id: "g1" }, deps),
+      await callTool("get_payment_status", { contact_id: "g1" }, deps),
+      await callTool("handoff_to_advisor", { contact_id: "g1", reason: "other", summary: "Applicant wants to talk to a person about the MBA.", channel: "whatsapp" }, deps),
+      await callTool("save_lead", { contact_id: "g1", email: "bad" }, deps),
+    ];
+    for (const out of outs) {
+      expect(out.agent_guidance).toMatch(/Plain text only, no asterisks/);
+      expect(String(out.agent_guidance).replace(/\(no \*\*.*?\)/, "")).not.toMatch(/\*/);
+    }
+  });
 });
 
 describe("create_application_payment", () => {

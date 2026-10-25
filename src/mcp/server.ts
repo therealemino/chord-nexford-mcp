@@ -9,6 +9,7 @@ import { getPaymentStatus } from "./tools/getPaymentStatus.js";
 import { getTuition } from "./tools/getTuition.js";
 import { handoffToAdvisor } from "./tools/handoffToAdvisor.js";
 import { saveLead } from "./tools/saveLead.js";
+import { WHATSAPP_FORMAT } from "./shared.js";
 import type { Deps, ToolDef } from "./types.js";
 
 export const TOOLS = [
@@ -27,6 +28,11 @@ const formatIssues = (error: z.ZodError) =>
 
 /** Runs a tool by name with our own validation, so bad input becomes { ok: false, error } instead of a protocol error. */
 export async function callTool(name: string, args: unknown, deps: Deps): Promise<ToolOutput> {
+  const out = await runTool(name, args, deps);
+  return { ...out, agent_guidance: `${out.agent_guidance ?? ""} ${WHATSAPP_FORMAT}`.trim() };
+}
+
+async function runTool(name: string, args: unknown, deps: Deps): Promise<ToolOutput> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return fail("unknown_tool", `There is no tool called ${name}.`);
 

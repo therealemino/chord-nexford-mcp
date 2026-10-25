@@ -15,8 +15,8 @@ describe("foundation table", () => {
   });
 
   it("MBA specialisations follow the MBA rule", () => {
-    expect(codes("MBA in Marketing", "other")).toEqual({ result: "foundation_likely", codes: ["FND 5100"] });
-    expect(codes("MBA in Marketing", "business")).toEqual({ result: "direct_entry", codes: [] });
+    expect(codes("MBA in Cybersecurity", "other")).toEqual({ result: "foundation_likely", codes: ["FND 5100"] });
+    expect(codes("MBA with a Fintech and Blockchain specialisation", "business")).toEqual({ result: "direct_entry", codes: [] });
   });
 
   it("MBA in Finance: not business, finance or accounting needs FND 5100", () => {
@@ -68,6 +68,10 @@ describe("eligibility edge cases", () => {
     expect(assessEligibility({ programme: "BBA", has_bachelors_degree: false }).result).toBe("advisor_review");
     expect(assessEligibility({ programme: "Mini-MBA" }).result).toBe("advisor_review");
     expect(assessEligibility({ programme: "PhD in Astrophysics" }).result).toBe("advisor_review");
+  });
+
+  it("MBA in Entrepreneurship has no published foundation rule, so it goes to advisor_review", () => {
+    expect(codes("MBA in Entrepreneurship", "other").result).toBe("advisor_review");
   });
 
   it("MS Data Analytics without the statistics answer needs more info", () => {

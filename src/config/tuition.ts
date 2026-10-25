@@ -15,9 +15,11 @@ export const PUBLISHED_TUITION: Record<string, Partial<Record<ProgrammeId, Price
   Nigeria: { mba: { usd: 275, unit: "per_month" }, bba: { usd: 120, unit: "per_course" } },
 };
 
+/** MBA specialisations are priced as the standard MBA in every country. */
+export const PRICED_AS: Partial<Record<ProgrammeId, ProgrammeId>> = { mba_specialisation: "mba" };
+
 /** US rates for other programmes. Only returned when the country is the United States. */
 export const US_ONLY_TUITION: Partial<Record<ProgrammeId, Price>> = {
-  mba_specialisation: { usd: 450, unit: "per_month" },
   mba_finance: { usd: 470, unit: "per_month" },
   ms_data_analytics: { usd: 470, unit: "per_month" },
   ms_digital_transformation: { usd: 470, unit: "per_month" },

@@ -28,7 +28,8 @@ export interface Assessment {
 
 const { FND5100, STA1300, FDT5001 } = FOUNDATION_COURSES;
 
-function foundationFor(p: Programme, field: DegreeField, hasStats: boolean | null | undefined): FoundationCourse[] {
+/** Foundation courses for a master's programme, or null when Nexford publishes no rule for it. */
+function foundationFor(p: Programme, field: DegreeField, hasStats: boolean | null | undefined): FoundationCourse[] | null {
   const business = BUSINESS_FIELDS.includes(field);
   const tech = TECHNOLOGY_FIELDS.includes(field);
   switch (p.id) {
@@ -42,7 +43,7 @@ function foundationFor(p: Programme, field: DegreeField, hasStats: boolean | nul
     case "ms_data_analytics":
       return [...(business ? [] : [FND5100]), ...(hasStats ? [] : [STA1300])];
     default:
-      return [];
+      return null;
   }
 }
 
@@ -51,7 +52,8 @@ export function assessEligibility(input: EligibilityInput): Assessment {
   const programme = findProgramme(input.programme);
   const base = { programme, foundation_courses: [], waiver_can_be_requested: false, missing_fields: [] };
 
-  if (!programme || programme.level !== "master") return { ...base, result: "advisor_review" };
+  const hasRule = programme?.level === "master" && foundationFor(programme, "business", true) !== null;
+  if (!programme || !hasRule) return { ...base, result: "advisor_review" };
   if (input.has_bachelors_degree === false) return { ...base, result: "not_eligible" };
 
   const missing: string[] = [];
@@ -60,7 +62,7 @@ export function assessEligibility(input: EligibilityInput): Assessment {
   if (programme.id === "ms_data_analytics" && input.has_statistics_course == null) missing.push("has_statistics_course");
   if (missing.length > 0) return { ...base, result: "need_more_info", missing_fields: missing };
 
-  const courses = foundationFor(programme, input.degree_field!, input.has_statistics_course);
+  const courses = foundationFor(programme, input.degree_field!, input.has_statistics_course)!;
   if (courses.length === 0) return { ...base, result: "direct_entry" };
   return {
     ...base,

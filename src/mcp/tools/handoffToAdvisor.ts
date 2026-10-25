@@ -25,6 +25,7 @@ export const handoffToAdvisor = defineTool({
     "Hand the person over to a human Application Specialist, either in this WhatsApp chat (channel 'whatsapp') or by phone callback (channel 'call').",
     "Call it when they ask for a person, or for scholarships/funding, transcript or credit-transfer evaluation, refunds or billing,",
     "degree recognition, prices that aren't published, complaints, or anything not in the knowledge base.",
+    "For calls you need a phone number: you cannot see the number they are messaging from, so ask them to type the number to call (with country code).",
     "For calls, agree a time first and pass it as preferred_callback_time (ISO 8601 with offset, e.g. 2026-11-02T14:00:00+01:00).",
     "Specialists work 7am to 6pm New York time. If the time is outside those hours you get ok: false with alternative times to offer; nothing is saved until a valid time is accepted.",
   ].join(" "),
@@ -33,8 +34,8 @@ export const handoffToAdvisor = defineTool({
     reason: z.enum(HANDOFF_REASONS),
     summary: z.string().trim().min(20).max(1000).describe("Your summary for the specialist: the person's background, programme interest, and their open questions."),
     channel: z.enum(["whatsapp", "call"]),
-    callback_number: z.string().trim().regex(/^\+?[\d\s\-()]{7,20}$/, "must be a phone number").nullish().describe("Number to call. Required for calls unless use_whatsapp_number is true."),
-    use_whatsapp_number: z.boolean().nullish().describe("For calls: use the WhatsApp number already saved on the lead."),
+    callback_number: z.string().trim().regex(/^\+?[\d\s\-()]{7,20}$/, "must be a phone number").nullish().describe("Number to call, as typed by the person. Required for calls unless use_whatsapp_number is true."),
+    use_whatsapp_number: z.boolean().nullish().describe("For calls: use a WhatsApp number the person already gave you and you saved with save_lead. You cannot see their number yourself."),
     preferred_callback_time: z.string().trim().max(40).nullish().describe("Agreed callback time, ISO 8601 with UTC offset."),
   },
   async handler(args, { repo, now }) {
@@ -48,8 +49,8 @@ export const handoffToAdvisor = defineTool({
         return fail(
           "callback_number_required",
           args.use_whatsapp_number
-            ? "We don't have their WhatsApp number saved. Ask which number to call, then try again."
-            : "Ask which number the specialist should call (or whether to use this WhatsApp number), then try again.",
+            ? "No number is saved for them, and you can't see the number they're messaging from. Ask them to type the number to call, with country code, then try again."
+            : "Ask them to type the number the specialist should call, with country code, then try again.",
         );
       }
       if (args.preferred_callback_time) {
