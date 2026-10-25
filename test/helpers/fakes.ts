@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import type { NotifyStrategy } from "../../src/config/chord.js";
 import type { Deps } from "../../src/mcp/types.js";
 import type { ChordClient } from "../../src/services/chord.js";
+import type { EmailMessage } from "../../src/services/email.js";
 import type { PaystackClient, VerifiedTransaction } from "../../src/services/paystack.js";
 import type { Handoff, Lead, Payment, Repo } from "../../src/services/types.js";
 
@@ -77,15 +78,37 @@ export function fakeRepo() {
       Object.assign(payments.find((p) => p.id === id)!, patch);
     }),
     async insertHandoff(h) {
-      handoffs.push({
+      const row: Handoff = {
         payment_id: null as unknown as string, ...h, id: randomUUID(), status: "pending", notes: null,
         contacted_at: null, closed_at: null, created_at: stamp(),
-      });
+        alert_emailed_at: null, alert_error: null, chord_flagged_at: null, chord_flag_error: null,
+      };
+      handoffs.push(row);
+      return { ...row };
     },
     async insertHandoffOnce(h) {
-      if (handoffs.some((x) => x.payment_id === h.payment_id)) return false;
-      await repo.insertHandoff(h);
-      return true;
+      if (handoffs.some((x) => x.payment_id === h.payment_id)) return null;
+      return repo.insertHandoff(h);
+    },
+    async findDuplicateHandoff(h, since) {
+      return (
+        handoffs.find(
+          (x) => x.lead_id === h.lead_id && x.channel === h.channel && x.reason === h.reason && x.status === "pending" &&
+            x.callback_time === h.callback_time && x.created_at >= since,
+        ) ?? null
+      );
+    },
+    async claimHandoffEmail(id, at) {
+      const h = handoffs.find((x) => x.id === id && !x.alert_emailed_at);
+      if (!h) return null;
+      h.alert_emailed_at = at;
+      return { ...h };
+    },
+    async updateHandoffAlert(id, patch) {
+      Object.assign(handoffs.find((x) => x.id === id)!, patch);
+    },
+    async handoffAlertFailuresSince(since) {
+      return handoffs.filter((h) => h.created_at >= since && (h.alert_error || h.chord_flag_error));
     },
     async latestCallbackHandoff(leadId) {
       const mine = handoffs.filter((h) => h.lead_id === leadId && h.channel === "call");
@@ -162,8 +185,8 @@ export function fakeChord() {
     handBack: vi.fn(async (id: string) => ({ id, control_state: "agent_active" })),
   } satisfies ChordClient;
 
-  /** Adds a customer thread whose agent used create_application_payment at `atMs`. */
-  const addCustomerThread = (id: string, atMs: number, opts: { displayName?: string; controlState?: string } = {}) => {
+  /** Adds a customer thread whose agent used `tool` (default create_application_payment) at `atMs`. */
+  const addCustomerThread = (id: string, atMs: number, opts: { displayName?: string; controlState?: string; tool?: string } = {}) => {
     threads.push({
       id,
       channel_role: "EXTERNAL",
@@ -174,14 +197,22 @@ export function fakeChord() {
     });
     turns[id] = [
       { direction: "inbound", timestamp: atMs - 2000, metadata: null },
-      { direction: "outbound", timestamp: atMs + 3000, metadata: { tools_used: [{ name: "mcp__Nexford_MCP_Server__create_application_payment", ok: true }] } },
+      { direction: "outbound", timestamp: atMs + 3000, metadata: { tools_used: [{ name: `mcp__Nexford_MCP_Server__${opts.tool ?? "create_application_payment"}`, ok: true }] } },
     ];
   };
   return { client, threads, turns, addCustomerThread };
 }
 
-export function makeDeps(opts: { now?: string; verify?: Partial<VerifiedTransaction>; strategy?: NotifyStrategy | null } = {}) {
+export function fakeEmail() {
+  const sent: EmailMessage[] = [];
+  return { sent, send: vi.fn(async (m: EmailMessage) => void sent.push(m)) };
+}
+
+export function makeDeps(
+  opts: { now?: string; verify?: Partial<VerifiedTransaction>; strategy?: NotifyStrategy | null; email?: boolean } = {},
+) {
   const db = fakeRepo();
+  const email = fakeEmail();
   const paystack = fakePaystack(opts.verify);
   const chord = fakeChord();
   const background: Promise<void>[] = [];
@@ -192,6 +223,12 @@ export function makeDeps(opts: { now?: string; verify?: Partial<VerifiedTransact
     now: () => now,
     publicBaseUrl: "https://example.test",
     chord: opts.strategy ? { client: chord.client, workspaceId: "ws_1", teammateId: "tm_1", strategy: opts.strategy } : null,
+    alerts: {
+      email: opts.email === false ? null : email,
+      to: ["team@example.com"],
+      threadUrlTemplate: "https://chord.example/threads/{thread_id}",
+      threadLookupDelaysMs: [0],
+    },
     runInBackground: (task) => {
       background.push(task());
     },
@@ -201,6 +238,7 @@ export function makeDeps(opts: { now?: string; verify?: Partial<VerifiedTransact
     db,
     paystack,
     chord,
+    email,
     /** Waits for every background task started so far. */
     settle: () => Promise.all(background),
     setNow: (iso: string) => (now = DateTime.fromISO(iso, { zone: "utc" })),

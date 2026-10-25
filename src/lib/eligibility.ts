@@ -71,3 +71,7 @@ export function assessEligibility(input: EligibilityInput): Assessment {
     waiver_can_be_requested: (input.years_relevant_experience ?? 0) >= WAIVER_MIN_YEARS,
   };
 }
+
+/** A foundation waiver can be requested (never promised) with enough relevant experience. */
+export const waiverRequestable = (eligibility: string | null, years: number | null): boolean =>
+  eligibility === "foundation_likely" && (years ?? 0) >= WAIVER_MIN_YEARS;

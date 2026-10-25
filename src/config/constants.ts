@@ -6,3 +6,6 @@ export const TUITION_CALCULATOR_LINK = "https://www.nexford.edu/tuition";
 
 /** A pending payment younger than this is reused instead of creating a new Paystack transaction. */
 export const PENDING_PAYMENT_REUSE_MINUTES = 30;
+
+/** A handoff_to_advisor call repeating a pending handoff within this window is treated as a retry (one alert). */
+export const HANDOFF_RETRY_WINDOW_MINUTES = 15;

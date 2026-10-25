@@ -85,14 +85,47 @@ export function createSupabaseRepo(url: string, serviceRoleKey: string): Repo {
     },
 
     async insertHandoff(h) {
-      must(await db.from("handoffs").insert(h), "insertHandoff");
+      return must(await db.from("handoffs").insert(h).select("*").single<Handoff>(), "insertHandoff");
     },
     async insertHandoffOnce(h) {
       const rows = must(
-        await db.from("handoffs").upsert(h, { onConflict: "payment_id", ignoreDuplicates: true }).select("id"),
+        await db.from("handoffs").upsert(h, { onConflict: "payment_id", ignoreDuplicates: true }).select("*"),
         "insertHandoffOnce",
-      ) as { id: string }[];
-      return rows.length > 0;
+      ) as Handoff[];
+      return rows[0] ?? null;
+    },
+    async findDuplicateHandoff(h, sinceIso) {
+      let q = db
+        .from("handoffs")
+        .select("*")
+        .eq("lead_id", h.lead_id)
+        .eq("channel", h.channel)
+        .eq("reason", h.reason)
+        .eq("status", "pending")
+        .gte("created_at", sinceIso);
+      q = h.callback_time ? q.eq("callback_time", h.callback_time) : q.is("callback_time", null);
+      return must(await q.order("created_at", { ascending: false }).limit(1).maybeSingle<Handoff>(), "findDuplicateHandoff");
+    },
+    async claimHandoffEmail(id, atIso) {
+      const rows = must(
+        await db.from("handoffs").update({ alert_emailed_at: atIso }).eq("id", id).is("alert_emailed_at", null).select("*"),
+        "claimHandoffEmail",
+      ) as Handoff[];
+      return rows[0] ?? null;
+    },
+    async updateHandoffAlert(id, patch) {
+      must(await db.from("handoffs").update(patch).eq("id", id), "updateHandoffAlert");
+    },
+    async handoffAlertFailuresSince(sinceIso) {
+      return must(
+        await db
+          .from("handoffs")
+          .select("*")
+          .gte("created_at", sinceIso)
+          .or("alert_error.not.is.null,chord_flag_error.not.is.null")
+          .order("created_at", { ascending: true }),
+        "handoffAlertFailuresSince",
+      ) as Handoff[];
     },
     async latestCallbackHandoff(leadId) {
       return must(

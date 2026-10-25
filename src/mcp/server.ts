@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { ADVISOR_BOOKING_LINK } from "../config/constants.js";
 import { log } from "../lib/log.js";
 import { fail, type ToolOutput } from "../lib/result.js";
 import { assessEligibilityTool } from "./tools/assessEligibility.js";
@@ -9,6 +10,7 @@ import { getPaymentStatus } from "./tools/getPaymentStatus.js";
 import { getTuition } from "./tools/getTuition.js";
 import { handoffToAdvisor } from "./tools/handoffToAdvisor.js";
 import { saveLead } from "./tools/saveLead.js";
+import { getHandoffAlertsHealth } from "./admin/getHandoffAlertsHealth.js";
 import { getLead } from "./admin/getLead.js";
 import { getPipelineSummary } from "./admin/getPipelineSummary.js";
 import { listPendingHandoffs } from "./admin/listPendingHandoffs.js";
@@ -26,7 +28,7 @@ export const TOOLS = [
 ] as unknown as ToolDef[];
 
 /** Internal tools for staff, served only on /mcp-admin. Must share nothing with TOOLS. */
-export const ADMIN_TOOLS = [getPipelineSummary, listPendingHandoffs, updateHandoffStatus, getLead] as unknown as ToolDef[];
+export const ADMIN_TOOLS = [getPipelineSummary, listPendingHandoffs, updateHandoffStatus, getLead, getHandoffAlertsHealth] as unknown as ToolDef[];
 
 export interface Toolset {
   serverName: string;
@@ -64,7 +66,10 @@ async function runTool(tools: ToolDef[], name: string, args: unknown, deps: Deps
     return await tool.handler(parsed.data, deps);
   } catch (err) {
     log.error("tool failed", { tool: name, error: (err as Error).message });
-    return fail("internal_error", "Something went wrong on our side. Apologise briefly and offer to connect them with an Application Specialist.");
+    return fail(
+      "internal_error",
+      `Something went wrong on our side and nothing was saved or booked. Apologise briefly, say an Application Specialist will follow up, and share the consultation booking link ${ADVISOR_BOOKING_LINK}.`,
+    );
   }
 }
 

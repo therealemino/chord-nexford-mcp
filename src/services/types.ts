@@ -65,7 +65,13 @@ export interface Handoff extends Required<NewHandoff> {
   closed_at: string | null;
   created_at: string;
   payment_id: string;
+  alert_emailed_at: string | null;
+  alert_error: string | null;
+  chord_flagged_at: string | null;
+  chord_flag_error: string | null;
 }
+
+export type HandoffAlertPatch = Partial<Pick<Handoff, "alert_emailed_at" | "alert_error" | "chord_flagged_at" | "chord_flag_error">>;
 
 /** A handoff with the lead fields admin views need. */
 export interface HandoffWithLead extends Handoff {
@@ -93,9 +99,16 @@ export interface Repo {
   /** Records whether/why the customer was told about a successful payment. */
   updatePaymentNotification(id: string, patch: Pick<Payment, "customer_notified_at" | "notify_error">): Promise<void>;
 
-  insertHandoff(h: NewHandoff): Promise<void>;
-  /** Inserts a new_applicant handoff unless one already exists for h.payment_id. Returns true if inserted. */
-  insertHandoffOnce(h: NewHandoff & { payment_id: string }): Promise<boolean>;
+  insertHandoff(h: NewHandoff): Promise<Handoff>;
+  /** Inserts a new_applicant handoff unless one already exists for h.payment_id. Returns the new row, or null. */
+  insertHandoffOnce(h: NewHandoff & { payment_id: string }): Promise<Handoff | null>;
+  /** A pending handoff with the same lead, channel, reason and callback time created since `sinceIso` (a tool retry). */
+  findDuplicateHandoff(h: NewHandoff, sinceIso: string): Promise<Handoff | null>;
+  /** Atomically marks the handoff as emailed if it wasn't already. Returns the row if this caller won, else null. */
+  claimHandoffEmail(id: string, atIso: string): Promise<Handoff | null>;
+  updateHandoffAlert(id: string, patch: HandoffAlertPatch): Promise<void>;
+  /** Handoffs since `sinceIso` whose email or Chord action failed. */
+  handoffAlertFailuresSince(sinceIso: string): Promise<Handoff[]>;
   latestCallbackHandoff(leadId: string): Promise<Handoff | null>;
 
   // Admin

@@ -45,6 +45,34 @@ For an internal Chord teammate. These share no tools with `/mcp`, and a test che
 | `list_pending_handoffs` | Oldest first: lead, programme, reason, channel, callback time (Lagos), `overdue`, summary. `include_contacted` adds contacted-but-open ones |
 | `update_handoff_status` | Mark `contacted` or `closed` (sets `contacted_at` / `closed_at`) with an optional note, appended with a timestamp |
 | `get_lead` | Search by email, `contact_id` or name fragment (max 5): profile, payment status, handoff history |
+| `get_handoff_alerts_health` | Handoffs from the last 7 days whose alert email or Chord action failed, with ids and errors |
+
+`list_pending_handoffs` also shows `alert_emailed_at`, `chord_flagged_at` and any `alert_error` / `chord_flag_error`, so a handoff nobody was told about is visible.
+
+## Human alerts for every handoff
+
+Every handoff row, whatever its kind, alerts a person. Kinds:
+- callback: `handoff_to_advisor` with channel `call`
+- chat: channel `whatsapp`
+- new_applicant: fee paid
+
+The alert runs in the background after the row is saved, and a failure never fails the tool or the webhook.
+
+- **Email (Resend).** One email per handoff to `ALERT_EMAIL_TO`. Subjects:
+  - `[Callback] Call {name} at {time} Lagos ({time} ET)`
+  - `[Chat handoff] {name} wants a specialist on WhatsApp`
+  - `[New applicant] {name} paid the $25 fee for {programme}`
+
+  The body opens with the action to take (number and time for callbacks), then the lead's profile, eligibility and payment, the agent's summary, a link to the Chord thread when known, and the handoff id for `update_handoff_status`.
+- **One email per handoff, guaranteed in three ways:**
+  - The send is claimed atomically on the row (`alert_emailed_at`).
+  - Resend gets an idempotency key.
+  - A `handoff_to_advisor` retry with the same details within 15 minutes reuses the existing handoff instead of creating a new one.
+
+  Failures are recorded in `alert_error`.
+- **Sender domain.** Resend's shared `onboarding@resend.dev` sender only delivers to the Resend account owner's own address. To reach the team inbox, `ALERT_EMAIL_FROM` must be on a domain verified in Resend (e.g. `alerts@eminotechnologies.com`).
+- **Chord thread link.** The thread is found the same way as for payment confirmations, anchored on this `handoff_to_advisor` call (or on the payment link for new applicants). The agent's turn appears a few seconds after the tool returns, so the alert retries the lookup after 8, 15 and 30 seconds before sending without a link.
+- **Specialist hours.** `handoff_to_advisor` always returns `specialist_hours_lagos_today` (e.g. "12:00 PM to 11:00 PM"), computed from 07:00–18:00 New York time, so the agent never works hours out itself. An out-of-hours callback request returns `next_available_slot`.
 
 ## When an application fee is paid
 
@@ -109,6 +137,10 @@ pnpm dev              # http://localhost:3000
 | `CHORD_API_KEY` | Chord API key with `thread:read`, `thread:write`, `teammate:read`, `teammate:update`. Required unless the strategy is `off` |
 | `CHORD_WORKSPACE_ID` | Chord workspace id. Required unless `off` |
 | `CHORD_TEAMMATE_ID` | The WhatsApp admissions teammate's id. Required unless `off` |
+| `RESEND_API_KEY` | Resend API key for handoff alert emails. Optional: without it (or the next two), alerts are skipped with a startup warning |
+| `ALERT_EMAIL_FROM` | Sender on a Resend-verified domain, e.g. `Nexford Admissions Bot <alerts@eminotechnologies.com>` |
+| `ALERT_EMAIL_TO` | Alert recipients, comma-separated |
+| `CHORD_DASHBOARD_THREAD_URL_TEMPLATE` | Chord dashboard thread URL containing `{thread_id}`, used for the link in alert emails. Optional |
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Server-side only |
 | `PAYSTACK_SECRET_KEY` | Must start with `sk_test_` or the server won't start |
@@ -225,7 +257,7 @@ curl -X POST "$CHORD/teammates/$OPS_ID/schedules" \
   -H "Authorization: Bearer $CHORD_API_KEY" -H "Content-Type: application/json" \
   -d '{
     "name": "Daily admissions report",
-    "task_prompt": "Use get_pipeline_summary for yesterday and list_pending_handoffs. Write a short report: new leads, payments, conversion, top programmes, then every pending handoff oldest first with overdue callbacks marked. Keep it under 200 words.",
+    "task_prompt": "Use get_handoff_alerts_health, get_pipeline_summary for yesterday and list_pending_handoffs. If any handoff alerts failed, say so at the very top with their ids. Then write a short report: new leads, payments, conversion, top programmes, then every pending handoff oldest first with overdue callbacks marked. Keep it under 200 words.",
     "cadence": { "type": "DAILY", "time_of_day": "09:00", "timezone": "Africa/Lagos" },
     "enabled": true,
     "workspace_id": "'"$WORKSPACE_ID"'"

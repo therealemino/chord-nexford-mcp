@@ -27,7 +27,7 @@ describe("/mcp-admin", () => {
   it("customer and admin endpoints share no tools", async () => {
     const customer = await names("/mcp", TOKEN);
     const admin = await names("/mcp-admin", ADMIN_TOKEN);
-    expect(admin).toEqual(["get_pipeline_summary", "list_pending_handoffs", "update_handoff_status", "get_lead"]);
+    expect(admin).toEqual(["get_pipeline_summary", "list_pending_handoffs", "update_handoff_status", "get_lead", "get_handoff_alerts_health"]);
     expect(customer.filter((n) => admin.includes(n))).toEqual([]);
     expect(admin.filter((n) => customer.includes(n))).toEqual([]);
   });

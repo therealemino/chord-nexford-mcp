@@ -1,8 +1,9 @@
 import { DateTime } from "luxon";
-import { WAIVER_MIN_YEARS } from "../config/foundation.js";
+import { waiverRequestable } from "../lib/eligibility.js";
 import { formatForApplicant } from "../lib/hours.js";
 import { log } from "../lib/log.js";
-import type { PaystackClient } from "./paystack.js";
+import type { Deps } from "../mcp/types.js";
+import { alertHandoff } from "./handoffAlerts.js";
 import type { Handoff, Lead, Payment, PaymentStatus, Repo } from "./types.js";
 
 export interface ReconcileResult {
@@ -18,10 +19,7 @@ export interface ReconcileResult {
  * get_payment_status. Never trusts the caller: it re-verifies with Paystack and checks currency and
  * amount against what we stored. Idempotent: a repeated call after success changes nothing.
  */
-export async function reconcilePayment(
-  reference: string,
-  deps: { repo: Repo; paystack: PaystackClient; now: () => DateTime },
-): Promise<ReconcileResult> {
+export async function reconcilePayment(reference: string, deps: Deps): Promise<ReconcileResult> {
   const { repo, paystack } = deps;
   const payment = await repo.getPaymentByReference(reference);
   if (!payment) {
@@ -52,7 +50,7 @@ export async function reconcilePayment(
     }
     const lead = await repo.updateLead(updated.lead_id, { status: "paid" });
     log.info("payment succeeded", { reference, lead_id: updated.lead_id, status: "success" });
-    await createNewApplicantHandoff(lead, updated, repo);
+    await createNewApplicantHandoff(lead, updated, deps);
     return { found: true, status: "success", changed: true, payment: updated };
   }
 
@@ -69,7 +67,7 @@ export async function reconcilePayment(
 /** Staff-facing summary of a newly paid applicant. Stored in the database only, never sent to the customer. */
 export function newApplicantSummary(lead: Lead, payment: Payment, callback: Handoff | null): string {
   const yesNo = (v: boolean | null) => (v === null ? "unknown" : v ? "yes" : "no");
-  const waiver = lead.eligibility_result === "foundation_likely" && (lead.years_relevant_experience ?? 0) >= WAIVER_MIN_YEARS;
+  const waiver = waiverRequestable(lead.eligibility_result, lead.years_relevant_experience);
   const parts = [
     "New applicant: application fee paid.",
     `Name: ${lead.full_name ?? "not given"}.`,
@@ -89,7 +87,8 @@ export function newApplicantSummary(lead: Lead, payment: Payment, callback: Hand
 }
 
 /** One new_applicant handoff per payment (enforced by a unique index on payment_id). Failures are logged, not thrown. */
-async function createNewApplicantHandoff(lead: Lead, payment: Payment, repo: Repo): Promise<void> {
+async function createNewApplicantHandoff(lead: Lead, payment: Payment, deps: Deps): Promise<void> {
+  const { repo } = deps;
   try {
     const callback = await repo.latestCallbackHandoff(lead.id);
     const inserted = await repo.insertHandoffOnce({
@@ -101,7 +100,10 @@ async function createNewApplicantHandoff(lead: Lead, payment: Payment, repo: Rep
       callback_number: null,
       callback_time: null,
     });
-    if (inserted) log.info("new applicant handoff created", { lead_id: lead.id, reference: payment.paystack_reference });
+    if (inserted) {
+      log.info("new applicant handoff created", { lead_id: lead.id, handoff_id: inserted.id, reference: payment.paystack_reference });
+      deps.runInBackground(() => alertHandoff(inserted.id, deps));
+    }
   } catch (err) {
     log.error("new applicant handoff failed", { lead_id: lead.id, reference: payment.paystack_reference, error: (err as Error).message });
   }

@@ -3,7 +3,7 @@ import {
   CUSTOMER_CHANNEL_ROLE,
   extractThreads,
   getPath,
-  LINK_TOOL_SUFFIX,
+  PAYMENT_TOOL_SUFFIX,
   LINK_WINDOW_SECONDS,
   THREAD_LIST_LIMIT,
   TURN_PAGES_MAX,
@@ -22,7 +22,7 @@ interface Turn {
   metadata?: { tools_used?: { name?: string }[] } | null;
 }
 
-async function agentUsedLinkToolBetween(client: ChordClient, threadId: string, fromMs: number, toMs: number): Promise<boolean> {
+async function agentUsedToolBetween(client: ChordClient, threadId: string, toolSuffix: string, fromMs: number, toMs: number): Promise<boolean> {
   let cursor: string | undefined;
   for (let page = 0; page < TURN_PAGES_MAX; page++) {
     const res = await client.listTurns(threadId, { limit: 50, cursor });
@@ -33,7 +33,7 @@ async function agentUsedLinkToolBetween(client: ChordClient, threadId: string, f
         typeof t.timestamp === "number" &&
         t.timestamp >= fromMs &&
         t.timestamp <= toMs &&
-        (t.metadata?.tools_used ?? []).some((u) => u.name?.endsWith(LINK_TOOL_SUFFIX)),
+        (t.metadata?.tools_used ?? []).some((u) => u.name?.endsWith(toolSuffix)),
     );
     if (hit) return true;
     cursor = getPath(res, "next_cursor") as string | undefined;
@@ -45,21 +45,22 @@ async function agentUsedLinkToolBetween(client: ChordClient, threadId: string, f
 /**
  * Returns the lead's Chord thread id, looking it up (and saving it) if we don't have it yet.
  *
- * Chord doesn't expose the contact_id on threads, so we anchor on the moment the agent created this lead's
- * payment link: the matching thread is the one customer thread whose agent turn used create_application_payment
- * within LINK_WINDOW_SECONDS after `paymentCreatedAt`. Exactly one match is required; otherwise we return null
+ * Chord doesn't expose the contact_id on threads, so we anchor on a moment one of our tools ran for this lead
+ * (by default when its payment link was created): the matching thread is the one customer thread whose agent turn
+ * used that tool within LINK_WINDOW_SECONDS after `anchor`. Exactly one match is required; otherwise we return null
  * rather than risk messaging the wrong person.
  */
 export async function resolveThreadId(
   lead: Lead,
-  paymentCreatedAt: DateTime,
+  anchor: DateTime,
   deps: { repo: Repo; chord: ChordDeps },
+  toolSuffix = PAYMENT_TOOL_SUFFIX,
 ): Promise<string | null> {
   if (lead.chord_thread_id) return lead.chord_thread_id;
 
   const { client, workspaceId, teammateId } = deps.chord;
-  const fromMs = paymentCreatedAt.toMillis() - SKEW_MS;
-  const toMs = paymentCreatedAt.toMillis() + LINK_WINDOW_SECONDS * 1000;
+  const fromMs = anchor.toMillis() - SKEW_MS;
+  const toMs = anchor.toMillis() + LINK_WINDOW_SECONDS * 1000;
 
   const list = await client.listThreads({ workspace_id: workspaceId, agent_id: teammateId, limit: THREAD_LIST_LIMIT });
   const candidates = extractThreads(list).filter(
@@ -68,11 +69,11 @@ export async function resolveThreadId(
 
   const matches: string[] = [];
   for (const t of candidates) {
-    if (await agentUsedLinkToolBetween(client, String(t.id), fromMs, toMs)) matches.push(String(t.id));
+    if (await agentUsedToolBetween(client, String(t.id), toolSuffix, fromMs, toMs)) matches.push(String(t.id));
   }
 
   if (matches.length !== 1) {
-    log.warn("chord thread not linked", { lead_id: lead.id, candidates: candidates.length, matches: matches.length });
+    log.warn("chord thread not linked", { lead_id: lead.id, tool: toolSuffix, candidates: candidates.length, matches: matches.length });
     return null;
   }
   await deps.repo.updateLead(lead.id, { chord_thread_id: matches[0] });

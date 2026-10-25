@@ -19,6 +19,16 @@ export function formatForApplicant(dt: DateTime): string {
   return `${dt.setZone(APPLICANT_ZONE).toFormat("ccc d LLL, h:mm a")} (${APPLICANT_ZONE_LABEL})`;
 }
 
+/**
+ * Today's Application Specialist window (07:00–18:00 New York) shown in Lagos time, e.g. "12:00 PM to 11:00 PM".
+ * Agents must quote this rather than work it out: it shifts by an hour when US daylight saving ends.
+ */
+export function specialistHoursLagosToday(now: DateTime): string {
+  const day = now.setZone(SPECIALIST_ZONE).startOf("day");
+  const fmt = (hour: number) => day.set({ hour }).setZone(APPLICANT_ZONE).toFormat("h:mm a");
+  return `${fmt(SPECIALIST_OPEN_HOUR)} to ${fmt(SPECIALIST_CLOSE_HOUR)}`;
+}
+
 export interface Slot {
   iso: string;
   display: string;

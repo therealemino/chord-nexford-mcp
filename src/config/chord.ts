@@ -13,7 +13,8 @@ export type NotifyStrategy = (typeof NOTIFY_STRATEGIES)[number];
  * (metadata.tools_used[].name, e.g. "mcp__Nexford_MCP_Server__create_application_payment"), so we find the
  * one customer thread whose agent used create_application_payment just after we created that payment.
  */
-export const LINK_TOOL_SUFFIX = "__create_application_payment";
+export const PAYMENT_TOOL_SUFFIX = "__create_application_payment";
+export const HANDOFF_TOOL_SUFFIX = "__handoff_to_advisor";
 /** The agent's turn is written a few seconds after our tool returns; allow generous slack. */
 export const LINK_WINDOW_SECONDS = 120;
 /** Customer threads only; the workspace owner's own chat is channel_role PRINCIPAL. */

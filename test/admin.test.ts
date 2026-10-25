@@ -137,6 +137,20 @@ describe("admin handoff tools", () => {
     expect(await callAdminTool("get_lead", { query: "nobody" }, ctx.deps)).toMatchObject({ ok: true, count: 0 });
   });
 
+  it("list_pending_handoffs shows alert status and errors; get_handoff_alerts_health lists failures", async () => {
+    const ctx = await withHandoffs();
+    await ctx.settle();
+    Object.assign(ctx.db.handoffs[1], { alert_emailed_at: null, alert_error: "Resend: domain not verified" });
+    const list = await callAdminTool("list_pending_handoffs", {}, ctx.deps);
+    const [a, b] = list.handoffs as Record<string, unknown>[];
+    expect(a.alert_emailed_at).not.toBeNull();
+    expect(a).not.toHaveProperty("alert_error");
+    expect(b).toMatchObject({ alert_emailed_at: null, alert_error: "Resend: domain not verified" });
+
+    const health = await callAdminTool("get_handoff_alerts_health", {}, ctx.deps);
+    expect(health).toMatchObject({ ok: true, email_failures: 1, chord_failures: 0, handoffs: [{ handoff_id: ctx.db.handoffs[1].id, email_error: "Resend: domain not verified" }] });
+  });
+
   it("admin guidance carries no WhatsApp formatting rule", async () => {
     const ctx = await withHandoffs();
     expect((await callAdminTool("list_pending_handoffs", {}, ctx.deps)).agent_guidance).not.toMatch(/WhatsApp/);

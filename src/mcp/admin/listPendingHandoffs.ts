@@ -9,7 +9,8 @@ export const listPendingHandoffs = defineTool({
   name: "list_pending_handoffs",
   description:
     "Handoffs waiting for an Application Specialist, oldest first. Each has the lead, programme, reason, channel, " +
-    "callback time (Lagos time), overdue (callback time passed and still pending) and the agent's summary.",
+    "callback time (Lagos time), overdue (callback time passed and still pending), whether the team was alerted " +
+    "(alert_emailed_at, chord_flagged_at, plus alert_error / chord_flag_error if an alert failed) and the agent's summary.",
   shape: {
     include_contacted: z.boolean().nullish().describe("Also include handoffs already marked contacted but not closed."),
     limit: z.number().int().min(1).max(50).nullish().describe("Default 20."),
@@ -27,11 +28,17 @@ export const listPendingHandoffs = defineTool({
       callback_time: h.callback_time ? formatForApplicant(DateTime.fromISO(h.callback_time)) : null,
       overdue: isOverdue(h, now()),
       created: formatForApplicant(DateTime.fromISO(h.created_at)),
+      alert_emailed_at: h.alert_emailed_at,
+      chord_flagged_at: h.chord_flagged_at,
+      ...(h.alert_error && { alert_error: h.alert_error }),
+      ...(h.chord_flag_error && { chord_flag_error: h.chord_flag_error }),
       summary: h.summary,
     }));
     return ok(
       { count: handoffs.length, handoffs },
-      handoffs.length ? "List overdue callbacks first in your reply." : "There are no handoffs waiting.",
+      handoffs.length
+        ? "List overdue callbacks first. Point out any handoff with alert_error or chord_flag_error: the team may not know about it."
+        : "There are no handoffs waiting.",
     );
   },
 });
