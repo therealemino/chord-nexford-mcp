@@ -1,6 +1,6 @@
 /**
  * Calls every tool once against a running server, using the MCP client SDK.
- *   MCP_URL=https://<host>/mcp MCP_BEARER_TOKEN=... npm run smoke
+ *   MCP_URL=https://<host>/mcp MCP_BEARER_TOKEN=... pnpm smoke
  * Defaults to PUBLIC_BASE_URL/mcp from .env. Writes a test lead (contact_id smoke_<timestamp>)
  * and creates a Paystack TEST transaction.
  */

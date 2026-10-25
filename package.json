@@ -9,8 +9,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "tsx scripts/smoke.ts",
-    "gcp-build": "npm run build",
-    "deploy": "gcloud app deploy app.yaml"
+    "db:push": "tsx scripts/db.ts push",
+    "db:seed": "tsx scripts/db.ts seed"
   },
   "license": "UNLICENSED",
   "type": "module",
@@ -26,7 +26,9 @@
     "@types/express": "^5.0.6",
     "@types/luxon": "^3.7.6",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
+    "pg": "^8.23.1",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
@@ -35,5 +37,6 @@
   "private": true,
   "engines": {
     "node": ">=20"
-  }
+  },
+  "packageManager": "pnpm@12.10.1"
 }

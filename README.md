@@ -45,74 +45,67 @@ src/mcp/                 MCP server + one file per tool in tools/
 src/routes/              /mcp, /webhooks/paystack, /payments/callback
 supabase/                migration + seed
 scripts/smoke.ts         calls every tool once against a running server
+scripts/db.ts            db:push (migrations) and db:seed
 test/                    Vitest suite (Supabase and Paystack faked in memory)
 ```
 
 ## Local setup
 
-Requires Node 20+.
+Requires Node 20+ and pnpm.
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env     # fill in the values below
-npm test                 # runs without any external services
-npm run dev              # http://localhost:3000
+pnpm test                 # runs without any external services
+pnpm dev              # http://localhost:3000
 ```
 
 ### Environment variables
 
 | Variable | Notes |
 | --- | --- |
-| `PORT` | Set automatically on App Engine; use 3000 locally |
+| `PORT` | Set automatically on Render; use 3000 locally |
 | `MCP_BEARER_TOKEN` | Long random string, e.g. `openssl rand -hex 32`. Chord sends it as a bearer token |
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Server-side only |
 | `PAYSTACK_SECRET_KEY` | Must start with `sk_test_` or the server won't start |
 | `PUBLIC_BASE_URL` | Public URL of this server, no trailing slash. Used for Paystack's `callback_url` |
+| `DATABASE_URL` | Only for `pnpm db:push` / `pnpm db:seed`. Not needed on Render |
 
 The server refuses to start if any are missing.
 
 ## Database
 
-Run the migration, then (optionally) the seed:
-
-- **Supabase dashboard:** SQL Editor → paste `supabase/migrations/001_init.sql` → Run. Then `supabase/seed.sql`.
-- **Supabase CLI:** `supabase link --project-ref <ref>` then `supabase db push`. Run the seed with `psql "$DATABASE_URL" -f supabase/seed.sql`.
-
-All tables have RLS enabled and no policies, so only the service role can read or write them.
-
-## Deploy to Google App Engine (Standard, free tier)
-
-Uses App Engine **Standard** with one F1 instance that scales to zero, which fits inside the free tier (about 28 instance-hours a day). Google still requires a billing account on the project; set a budget alert (e.g. $1) under **Billing → Budgets & alerts**. Don't use the Flexible environment, which has no free tier.
-
-1. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install), then:
+1. In Supabase, open **Connect → Session pooler** and copy the connection string. Put it in `.env` as `DATABASE_URL`, with your database password filled in. Only these scripts use it; the server doesn't.
+2. Run:
    ```bash
-   gcloud auth login
-   gcloud projects create <project-id>        # or use an existing project
-   gcloud config set project <project-id>
-   gcloud app create --region=europe-west     # region is permanent; europe-west is closest to Lagos
+   pnpm db:push    # applies supabase/migrations/*.sql in order
+   pnpm db:seed    # optional: three demo leads
    ```
-   Link a billing account to the project in the Cloud Console if prompted.
-2. Create the config with your secrets (`app.yaml` is gitignored):
-   ```bash
-   cp app.example.yaml app.yaml
-   ```
-   Fill in the values. `PUBLIC_BASE_URL` is `https://<project-id>.<region-id>.r.appspot.com`. You can get it after the first deploy with `gcloud app describe --format='value(defaultHostname)'`, then redeploy.
-3. Deploy:
-   ```bash
-   npm run deploy      # gcloud app deploy app.yaml
-   ```
-   App Engine installs dependencies, runs the `gcp-build` script (the TypeScript build) and starts the app with `npm start`. `.gcloudignore` keeps `node_modules`, `.env` and tests out of the upload.
+
+`pnpm db:push` records applied files in a `schema_migrations` table, so rerunning it skips anything already applied. Each migration runs in a transaction, so a failing one leaves nothing half-applied. `pnpm db:seed` is safe to rerun because duplicates are skipped.
+
+You can also paste the SQL files into the Supabase **SQL Editor** instead. If you do, `pnpm db:push` won't know they were applied.
+
+All tables have row-level security enabled and no policies, so only the service role can read or write them.
+
+## Deploy to Render (free plan)
+
+1. Push this repo to GitHub.
+2. Render → **New → Blueprint** → pick the repo. `render.yaml` defines one free web service. It builds with `pnpm install --frozen-lockfile && pnpm run build`, starts with `pnpm start` and health-checks `/health`.
+3. Fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY` and `PUBLIC_BASE_URL` (the service's `https://<name>.onrender.com` URL). `MCP_BEARER_TOKEN` is generated; copy it from the service's **Environment** tab.
 4. Check the deploy:
    ```bash
    curl https://<app-url>/health
-   MCP_URL=https://<app-url>/mcp MCP_BEARER_TOKEN=<token> npm run smoke
+   MCP_URL=https://<app-url>/mcp MCP_BEARER_TOKEN=<token> pnpm smoke
    ```
-   Logs: `gcloud app logs tail -s default`.
 
-When idle, the instance scales to zero, so the first request afterwards takes a few seconds while it starts. Paystack retries webhooks that fail, and `get_payment_status` reconciles anything missed.
+**Free plan sleep.** A free Render service sleeps after about 15 minutes without traffic, and the next request waits up to a minute while it wakes. In practice:
+- Chord's first tool call after a quiet spell may time out. Open `https://<app-url>/health` a minute before a demo to wake it.
+- Paystack retries webhooks that fail, and `get_payment_status` re-verifies pending payments, so a webhook that arrives while the service is waking isn't lost.
+- To keep it awake, point a free uptime monitor (e.g. UptimeRobot or cron-job.org) at `/health` every 10 minutes. The free plan's 750 hours a month covers one service running all month.
 
-`npm run smoke` connects with the MCP client SDK, lists the tools and calls each one once. It creates a lead with `contact_id` `smoke_<timestamp>` and a Paystack **test** transaction. You can open the printed `authorization_url` and pay with a Paystack test card to try the full payment flow.
+`pnpm smoke` connects with the MCP client SDK, lists the tools and calls each one once. It creates a lead with `contact_id` `smoke_<timestamp>` and a Paystack **test** transaction. You can open the printed `authorization_url` and pay with a Paystack test card to try the full payment flow.
 
 ## Paystack test webhook
 

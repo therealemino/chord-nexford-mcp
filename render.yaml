@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: nexford-mcp
+    runtime: node
+    plan: free # sleeps after ~15 min idle; the first request after that takes up to a minute
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MCP_BEARER_TOKEN
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
