@@ -6,18 +6,24 @@ import { log } from "../../lib/log.js";
 import { fail, ok } from "../../lib/result.js";
 import type { Payment } from "../../services/types.js";
 import { contactId } from "../shared.js";
-import { defineTool } from "../types.js";
+import { defineTool, type Deps } from "../types.js";
 
 const FEE_NGN = toLocal(APPLICATION_FEE_USD, "NGN");
 const FEE_KOBO = usdToKobo(APPLICATION_FEE_USD);
 const amounts = { amount_usd: APPLICATION_FEE_USD, amount_ngn: FEE_NGN };
 
-const linkGuidance =
-  "Send this payment link. Say it's a secure Paystack page and that you'll confirm here in the chat once the payment comes through. " +
-  "Do not say they have paid until get_payment_status returns success.";
+const linkGuidance = (proactive: boolean) =>
+  "Send this payment link and say it's a secure Paystack page. " +
+  (proactive
+    ? "Tell them you'll message them here as soon as the payment comes through. Do not ask them to message you after paying. "
+    : "Say you'll confirm here in the chat once the payment comes through. ") +
+  "If they ask whether it has arrived, call get_payment_status. Do not say they have paid until it returns success.";
 
-const linkResult = (p: Payment, reused: boolean) =>
-  ok({ payment_status: p.status, authorization_url: p.authorization_url, reference: p.paystack_reference, reused_existing_link: reused, ...amounts }, linkGuidance);
+const linkResult = (p: Payment, reused: boolean, deps: Deps) =>
+  ok(
+    { payment_status: p.status, authorization_url: p.authorization_url, reference: p.paystack_reference, reused_existing_link: reused, ...amounts },
+    linkGuidance(!!deps.chord && deps.chord.strategy !== "off"),
+  );
 
 export const createApplicationPayment = defineTool({
   name: "create_application_payment",
@@ -28,7 +34,8 @@ export const createApplicationPayment = defineTool({
     "Safe to call again: it returns the existing link if one was created in the last 30 minutes, and never charges twice.",
   ].join(" "),
   shape: { contact_id: contactId },
-  async handler({ contact_id }, { repo, paystack, now, publicBaseUrl }) {
+  async handler({ contact_id }, deps) {
+    const { repo, paystack, now, publicBaseUrl } = deps;
     const lead = await repo.getLeadByContact(contact_id);
     const missing = [!lead?.full_name && "full_name", !lead?.email && "email"].filter(Boolean) as string[];
     if (!lead || missing.length > 0) {
@@ -47,7 +54,7 @@ export const createApplicationPayment = defineTool({
       existing.authorization_url &&
       now().diff(DateTime.fromISO(existing.created_at), "minutes").minutes < PENDING_PAYMENT_REUSE_MINUTES
     ) {
-      return linkResult(existing, true);
+      return linkResult(existing, true, deps);
     }
 
     const reference = `nxu_app_${lead.id.replace(/-/g, "").slice(0, 8)}_${now().toMillis()}`;
@@ -77,6 +84,6 @@ export const createApplicationPayment = defineTool({
     });
     await repo.updateLead(lead.id, { status: advanceStatus(lead.status, "applied") });
     log.info("payment link created", { reference, lead_id: lead.id, status: "pending" });
-    return linkResult(payment, false);
+    return linkResult(payment, false, deps);
   },
 });

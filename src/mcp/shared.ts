@@ -43,7 +43,7 @@ export const canonicalCountry = (c: string) => findCountry(c)?.name ?? c;
 
 /** Strips internal ids/timestamps and empty fields so WhatsApp-bound tool output stays small. */
 export function publicLead(lead: Lead) {
-  const { id: _id, created_at: _c, updated_at: _u, ...rest } = lead;
+  const { id: _id, created_at: _c, updated_at: _u, chord_thread_id: _t, ...rest } = lead;
   return Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && !(Array.isArray(v) && v.length === 0)));
 }
 

@@ -10,7 +10,7 @@ const sign = (body: string) => createHmac("sha512", SECRET).update(body).digest(
 
 async function setup(verify = {}) {
   const ctx = makeDeps({ verify });
-  const app = createApp(ctx.deps, { mcpBearerToken: "token", paystackSecretKey: SECRET });
+  const app = createApp(ctx.deps, { mcpBearerToken: "token", adminBearerToken: "admin", paystackSecretKey: SECRET });
   await callTool("save_lead", { contact_id: "w1", full_name: "Ada", email: "a@example.com" }, ctx.deps);
   const created = await callTool("create_application_payment", { contact_id: "w1" }, ctx.deps);
   const body = JSON.stringify({ event: "charge.success", data: { reference: created.reference, amount: 3_321_700, currency: "NGN" } });
@@ -30,7 +30,7 @@ describe("POST /webhooks/paystack", () => {
 
   it("rejects a missing signature with 401", async () => {
     const { deps } = makeDeps();
-    const app = createApp(deps, { mcpBearerToken: "token", paystackSecretKey: SECRET });
+    const app = createApp(deps, { mcpBearerToken: "token", adminBearerToken: "admin", paystackSecretKey: SECRET });
     const res = await request(app).post("/webhooks/paystack").set("content-type", "application/json").send("{}");
     expect(res.status).toBe(401);
   });

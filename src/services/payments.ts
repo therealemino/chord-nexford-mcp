@@ -1,7 +1,9 @@
-import type { DateTime } from "luxon";
+import { DateTime } from "luxon";
+import { WAIVER_MIN_YEARS } from "../config/foundation.js";
+import { formatForApplicant } from "../lib/hours.js";
 import { log } from "../lib/log.js";
 import type { PaystackClient } from "./paystack.js";
-import type { Payment, PaymentStatus, Repo } from "./types.js";
+import type { Handoff, Lead, Payment, PaymentStatus, Repo } from "./types.js";
 
 export interface ReconcileResult {
   found: boolean;
@@ -48,8 +50,9 @@ export async function reconcilePayment(
       // Someone else (a concurrent webhook) got there first.
       return { found: true, status: "success", changed: false, payment: await repo.getPaymentByReference(reference) };
     }
-    await repo.updateLead(updated.lead_id, { status: "paid" });
+    const lead = await repo.updateLead(updated.lead_id, { status: "paid" });
     log.info("payment succeeded", { reference, lead_id: updated.lead_id, status: "success" });
+    await createNewApplicantHandoff(lead, updated, repo);
     return { found: true, status: "success", changed: true, payment: updated };
   }
 
@@ -61,4 +64,45 @@ export async function reconcilePayment(
 
   // abandoned / ongoing / pending etc.: the person may still complete it, so we leave it pending.
   return { found: true, status: payment.status, changed: false, payment };
+}
+
+/** Staff-facing summary of a newly paid applicant. Stored in the database only, never sent to the customer. */
+export function newApplicantSummary(lead: Lead, payment: Payment, callback: Handoff | null): string {
+  const yesNo = (v: boolean | null) => (v === null ? "unknown" : v ? "yes" : "no");
+  const waiver = lead.eligibility_result === "foundation_likely" && (lead.years_relevant_experience ?? 0) >= WAIVER_MIN_YEARS;
+  const parts = [
+    "New applicant: application fee paid.",
+    `Name: ${lead.full_name ?? "not given"}.`,
+    `Email: ${lead.email ?? "not given"}.`,
+    `Country: ${lead.country ?? "not given"}.`,
+    `Programme: ${lead.programme ?? "not given"}.`,
+    `Bachelor's: ${yesNo(lead.has_bachelors_degree)}, field: ${lead.degree_field ?? "unknown"}, experience: ${lead.years_relevant_experience ?? "unknown"} years.`,
+    `Eligibility: ${lead.eligibility_result ?? "not assessed"}${lead.foundation_courses?.length ? ` (${lead.foundation_courses.join(", ")})` : ""}; waiver can be requested: ${waiver ? "yes" : "no"}.`,
+    `Payment ref: ${payment.paystack_reference}.`,
+  ];
+  if (callback) {
+    parts.push(
+      `Callback requested: ${callback.callback_number ?? "no number"}${callback.callback_time ? ` at ${formatForApplicant(DateTime.fromISO(callback.callback_time))}` : ", no time agreed"} (${callback.status}).`,
+    );
+  }
+  return parts.join(" ").slice(0, 1000);
+}
+
+/** One new_applicant handoff per payment (enforced by a unique index on payment_id). Failures are logged, not thrown. */
+async function createNewApplicantHandoff(lead: Lead, payment: Payment, repo: Repo): Promise<void> {
+  try {
+    const callback = await repo.latestCallbackHandoff(lead.id);
+    const inserted = await repo.insertHandoffOnce({
+      lead_id: lead.id,
+      payment_id: payment.id,
+      reason: "new_applicant",
+      summary: newApplicantSummary(lead, payment, callback),
+      channel: "whatsapp",
+      callback_number: null,
+      callback_time: null,
+    });
+    if (inserted) log.info("new applicant handoff created", { lead_id: lead.id, reference: payment.paystack_reference });
+  } catch (err) {
+    log.error("new applicant handoff failed", { lead_id: lead.id, reference: payment.paystack_reference, error: (err as Error).message });
+  }
 }

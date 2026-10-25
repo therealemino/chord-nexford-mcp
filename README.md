@@ -14,7 +14,8 @@ One Node process serves:
 
 | Route | Purpose |
 | --- | --- |
-| `POST /mcp` | MCP endpoint (Streamable HTTP, stateless, JSON responses). Requires `Authorization: Bearer $MCP_BEARER_TOKEN` |
+| `POST /mcp` | Customer MCP endpoint (Streamable HTTP, stateless, JSON responses). Requires `Authorization: Bearer $MCP_BEARER_TOKEN` |
+| `POST /mcp-admin` | Internal admin MCP endpoint, separate tools. Requires `Authorization: Bearer $ADMIN_MCP_BEARER_TOKEN` |
 | `POST /webhooks/paystack` | Paystack webhook, HMAC-SHA512 signature verified |
 | `GET /payments/callback` | Page Paystack redirects to after checkout ("return to WhatsApp") |
 | `GET /health` | Health check |
@@ -32,6 +33,41 @@ Every tool returns JSON: `ok`, the data, and `agent_guidance` (how to phrase the
 | `get_payment_status` | Latest application-fee status; if pending, re-verifies with Paystack (covers a missed webhook) |
 | `handoff_to_advisor` | Records a handoff (WhatsApp or call). Callback times are checked against specialist hours; outside them, nothing is saved and three alternative times (Lagos time) come back |
 
+Customer guidance always ends with WhatsApp formatting rules (plain text, no asterisks or Markdown, section labels on their own line). MBA specialisations (AI, Cybersecurity, Enabling E-Commerce, Fintech and Blockchain, International Business, Sustainability, Healthcare Management) are priced and assessed as the MBA and keep their name. MBA in Finance and MBA in Entrepreneurship are separate programmes.
+
+### Admin tools (`/mcp-admin`)
+
+For an internal Chord teammate. These share no tools with `/mcp`, and a test checks both directions.
+
+| Tool | What it does |
+| --- | --- |
+| `get_pipeline_summary` | `today` / `yesterday` / `last_7_days` / `last_30_days` (Lagos time): new leads, qualified, paid, conversion, leads by programme, foundation-likely share, pending handoffs, overdue callbacks |
+| `list_pending_handoffs` | Oldest first: lead, programme, reason, channel, callback time (Lagos), `overdue`, summary. `include_contacted` adds contacted-but-open ones |
+| `update_handoff_status` | Mark `contacted` or `closed` (sets `contacted_at` / `closed_at`) with an optional note, appended with a timestamp |
+| `get_lead` | Search by email, `contact_id` or name fragment (max 5): profile, payment status, handoff history |
+
+## When an application fee is paid
+
+On the payment's **first** transition to `success` (the update is guarded by `status <> 'success'`, so duplicate webhooks and status checks can't repeat it):
+
+1. The lead becomes `paid`.
+2. A `new_applicant` handoff is created for the admissions team. Its summary has name, email, country, programme (with specialisation), degree, eligibility and foundation courses, the waiver flag, the payment reference and any callback request. A unique index on `handoffs.payment_id` guarantees one per payment.
+3. **From the webhook only:** after Paystack has its `200`, a background task messages the applicant in their Chord thread ("Payment received ✅ …") and records `customer_notified_at`, or `notify_error` if it fails. If `get_payment_status` confirms the payment first, the agent is already telling the person in the conversation, so no extra message is sent.
+
+### How the Chord thread is found
+
+The `contact_id` the agent passes (`customer_…`) doesn't appear anywhere Chord exposes: not in thread fields, turns, request headers or MCP `_meta`. However, each agent turn records the tools it used (`metadata.tools_used`). So when the payment succeeds, the server looks at customer (`EXTERNAL`) threads and picks the one whose agent used `create_application_payment` within 2 minutes after this payment was created. It links the lead (`leads.chord_thread_id`) only if **exactly one** thread matches. If none or several match, no proactive message is sent (`notify_error = thread_not_found`), and the agent still confirms when the person asks.
+
+### Delivery strategies (`CHORD_NOTIFY_STRATEGY`)
+
+| Value | What happens |
+| --- | --- |
+| `takeover` (default) | Take over the thread, post the message, hand back. Hand-back is in a `finally` block, and happens only if we took over: a thread a human is already handling is left with them. The customer also sees Chord's fixed take-over acknowledgement |
+| `scheduled_task` | `POST /v1/scheduled-tasks` with a `MESSAGE` payload of `{ conversation_id, body }`. In testing (25 Oct 2026) Chord accepted these tasks but every one failed inside Chord with `tenant_id is required in x-tenant-id header`. It's kept for when that's fixed |
+| `off` | No messages; the `CHORD_*` variables aren't required |
+
+`pnpm chord:discover` is the tool used to find these API shapes: listing threads, `--task <id>`, `--thread <id> --try-message` and `--thread <id> --try-takeover`.
+
 ## Layout
 
 ```
@@ -40,12 +76,14 @@ src/app.ts               Express app (routes, body parsing)
 src/env.ts               env validation (refuses non sk_test_ keys)
 src/config/*.ts          FX rates, tuition, programmes, foundation rules, hours, constants
 src/lib/*.ts             pure logic: eligibility, tuition, hours, contact id, auth, logging
-src/services/            Supabase repository, Paystack client, shared payment reconcile
-src/mcp/                 MCP server + one file per tool in tools/
+src/services/            Supabase repository, Paystack and Chord clients, payment reconcile,
+                         Chord thread linking (chordThreads.ts) and payment notification (notify.ts)
+src/mcp/                 MCP server; customer tools in tools/, admin tools in admin/
 src/routes/              /mcp, /webhooks/paystack, /payments/callback
 supabase/                migration + seed
 scripts/smoke.ts         calls every tool once against a running server
 scripts/db.ts            db:push (migrations) and db:seed
+scripts/chord-discover.ts  probes undocumented Chord API shapes
 test/                    Vitest suite (Supabase and Paystack faked in memory)
 ```
 
@@ -66,13 +104,18 @@ pnpm dev              # http://localhost:3000
 | --- | --- |
 | `PORT` | Set automatically on Render; use 3000 locally |
 | `MCP_BEARER_TOKEN` | Long random string, e.g. `openssl rand -hex 32`. Chord sends it as a bearer token |
+| `ADMIN_MCP_BEARER_TOKEN` | Different long random string for `/mcp-admin` |
+| `CHORD_NOTIFY_STRATEGY` | `takeover` (default), `scheduled_task` or `off` |
+| `CHORD_API_KEY` | Chord API key with `thread:read`, `thread:write`, `teammate:read`, `teammate:update`. Required unless the strategy is `off` |
+| `CHORD_WORKSPACE_ID` | Chord workspace id. Required unless `off` |
+| `CHORD_TEAMMATE_ID` | The WhatsApp admissions teammate's id. Required unless `off` |
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Server-side only |
 | `PAYSTACK_SECRET_KEY` | Must start with `sk_test_` or the server won't start |
 | `PUBLIC_BASE_URL` | Public URL of this server, no trailing slash. Used for Paystack's `callback_url` |
 | `DATABASE_URL` | Only for `pnpm db:push` / `pnpm db:seed`. Not needed on Render |
 
-The server refuses to start if any are missing.
+The server refuses to start if any required variable is missing, or if the admin token equals the customer token.
 
 ## Database
 
@@ -145,9 +188,61 @@ curl -X PUT "$CHORD/teammates/$TEAMMATE_ID" \
   -d '{"add_mcp_server_ids": ["'"$MCP_SERVER_ID"'"]}'
 ```
 
+### Admin server and the Ops teammate
+
+```bash
+# 4. Register the admin endpoint as a second MCP server
+curl -X POST "$CHORD/workspaces/$WORKSPACE_ID/mcp-servers" \
+  -H "Authorization: Bearer $CHORD_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Nexford Admissions Admin",
+    "url": "https://<app-url>/mcp-admin",
+    "transport": "streamable_http",
+    "auth_type": "bearer",
+    "auth_token": "<ADMIN_MCP_BEARER_TOKEN>"
+  }'
+# -> $ADMIN_SERVER_ID
+```
+
+5. In Chord, create a second teammate, **Nexford Admissions Ops**. It's internal only, with no customer channels (no WhatsApp). Note its id as `$OPS_ID`.
+
+6. **Assign servers explicitly to both teammates.** A teammate with an *empty* MCP list can use *every* enabled MCP server in the workspace. So if you leave the WhatsApp teammate unassigned, applicants' agent could call the admin tools, and the Ops teammate could call customer tools. `set_mcp_server_ids` replaces the list exactly:
+
+```bash
+curl -X PUT "$CHORD/teammates/$TEAMMATE_ID" \
+  -H "Authorization: Bearer $CHORD_API_KEY" -H "Content-Type: application/json" \
+  -d '{"set_mcp_server_ids": ["'"$MCP_SERVER_ID"'"]}'
+
+curl -X PUT "$CHORD/teammates/$OPS_ID" \
+  -H "Authorization: Bearer $CHORD_API_KEY" -H "Content-Type: application/json" \
+  -d '{"set_mcp_server_ids": ["'"$ADMIN_SERVER_ID"'"]}'
+```
+
+7. Daily report on the Ops teammate, 09:00 Lagos time:
+
+```bash
+curl -X POST "$CHORD/teammates/$OPS_ID/schedules" \
+  -H "Authorization: Bearer $CHORD_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Daily admissions report",
+    "task_prompt": "Use get_pipeline_summary for yesterday and list_pending_handoffs. Write a short report: new leads, payments, conversion, top programmes, then every pending handoff oldest first with overdue callbacks marked. Keep it under 200 words.",
+    "cadence": { "type": "DAILY", "time_of_day": "09:00", "timezone": "Africa/Lagos" },
+    "enabled": true,
+    "workspace_id": "'"$WORKSPACE_ID"'"
+  }'
+# -> $SCHEDULE_ID
+```
+
+For a demo, run it immediately instead of waiting until 09:00:
+
+```bash
+curl -X POST "$CHORD/teammates/$OPS_ID/schedules/$SCHEDULE_ID/run" \
+  -H "Authorization: Bearer $CHORD_API_KEY"
+```
+
 ## Assumptions and open questions
 
-- **Chord's contact identifier.** It's not yet clear what Chord gives the agent as `contact_id` (possibly the WhatsApp number). All handling is in `normaliseContactId()` in `src/lib/contact.ts`: phone-like values are reduced to digits, anything else is used as is. Nothing else depends on its format, so if Chord's identifier turns out different, only that function changes.
+- **Chord's contact identifier** is Chord's customer id (`customer_…`), not a phone number. The agent can't see the sender's number and must ask for it. `normaliseContactId()` in `src/lib/contact.ts` still isolates the format. Chord exposes no link from that id to a thread, so the thread is found from tool-use timing (see "How the Chord thread is found").
 - **Specialist hours** are treated as 07:00–18:00 America/New_York **every day** (Nexford says "most days"). Suggested callback slots start on the hour, at least an hour ahead, and no later than 17:00 New York time. Times are computed in the IANA zone, so the US daylight-saving change (1 Nov 2026) moves the window from 12:00–23:00 to 13:00–00:00 Lagos time.
 - **Exchange rates** are Nexford's published rates effective **1 October 2026**, fixed in `src/config/fx.ts`. Amounts are rounded to whole units; kobo = whole naira × 100.
 - **Test mode only.** The server won't start with a key that doesn't begin with `sk_test_`.
@@ -157,5 +252,6 @@ curl -X PUT "$CHORD/teammates/$TEAMMATE_ID" \
 - **Foundation waivers** are only ever "can be requested" (3+ years of relevant experience; certifications are mentioned in the guidance but not captured as a field).
 - **Lead status** only moves forward (enquiring → qualified → applied → paid). Creating a payment link sets `applied`; `handed_off` and `paid` are always applied.
 - **Paystack `abandoned`.** Paystack reports unpaid, initialised transactions as `abandoned`. Since the person can still pay, those stay `pending` here. Only `failed` (or a verified mismatch) marks a payment failed.
-- **Webhook processing** runs before the 200 response (one verify call). After a valid signature it always answers 200, even if processing fails; `get_payment_status` reconciles later.
+- **Proactive confirmation** depends on finding the thread from timing. If two applicants create payment links within the same two minutes, neither gets the proactive message; their agents still confirm when asked. Pipeline "paid" counts applicants whose fee was paid in the period, so conversion (paid / new leads) can exceed 100% on quiet days.
+- **Webhook processing** runs before the 200 response (one verify call); the customer notification runs after it. After a valid signature it always answers 200, even if processing fails; `get_payment_status` reconciles later.
 - **Logging** records references, lead ids, statuses and events only, never names, emails, phone numbers or card details.

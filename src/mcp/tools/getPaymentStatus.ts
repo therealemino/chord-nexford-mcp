@@ -28,7 +28,12 @@ export const getPaymentStatus = defineTool({
     if (payment.status === "pending") {
       try {
         // Covers a missed or delayed webhook.
-        payment = (await reconcilePayment(payment.paystack_reference, deps)).payment ?? payment;
+        const r = await reconcilePayment(payment.paystack_reference, deps);
+        payment = r.payment ?? payment;
+        if (r.changed && r.status === "success") {
+          // The agent is confirming in this conversation right now, so no separate proactive message.
+          await deps.repo.updatePaymentNotification(payment.id, { customer_notified_at: deps.now().toUTC().toISO(), notify_error: null });
+        }
       } catch (err) {
         log.warn("reconcile during status check failed", { reference: payment.paystack_reference, error: (err as Error).message });
       }

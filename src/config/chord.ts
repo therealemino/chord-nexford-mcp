@@ -1,7 +1,6 @@
 /**
- * Chord-specific settings that depend on undocumented API shapes.
- * TODO: confirm against `pnpm chord:discover` output (thread JSON and the accepted MESSAGE payload)
- * before relying on these defaults.
+ * Chord-specific settings that depend on undocumented API shapes, confirmed with `pnpm chord:discover`
+ * on 25 Oct 2026 unless marked otherwise.
  */
 export const CHORD_API_BASE = "https://api.chordhq.xyz";
 
@@ -9,13 +8,21 @@ export const NOTIFY_STRATEGIES = ["scheduled_task", "takeover", "off"] as const;
 export type NotifyStrategy = (typeof NOTIFY_STRATEGIES)[number];
 
 /**
- * Dotted paths on a thread object that may hold the customer identifier the agent sees as contact_id.
- * A thread matches when any of these equals the contact_id. TODO: narrow to the real field after discovery.
+ * Linking a contact_id to a thread. Chord never exposes the customer_… id the agent passes as contact_id
+ * (not in thread fields, turns, tool-call headers or _meta). But each agent turn records the tools it used
+ * (metadata.tools_used[].name, e.g. "mcp__Nexford_MCP_Server__create_application_payment"), so we find the
+ * one customer thread whose agent used create_application_payment just after we created that payment.
  */
-export const THREAD_CUSTOMER_ID_PATHS = ["customer_id", "customer.id", "sender_id", "contact_id", "remote_id"];
+export const LINK_TOOL_SUFFIX = "__create_application_payment";
+/** The agent's turn is written a few seconds after our tool returns; allow generous slack. */
+export const LINK_WINDOW_SECONDS = 120;
+/** Customer threads only; the workspace owner's own chat is channel_role PRINCIPAL. */
+export const CUSTOMER_CHANNEL_ROLE = "EXTERNAL";
+export const THREAD_LIST_LIMIT = 50;
+export const TURN_PAGES_MAX = 5;
 
 /** Where the list of threads lives in GET /v1/threads responses (first array found wins). */
-export const THREAD_LIST_PATHS = ["data", "threads", "items", "results"];
+export const THREAD_LIST_PATHS = ["threads", "data", "items", "results"];
 
 /** Thread metadata path holding the partner-chat conversation id that MESSAGE tasks need. */
 export const THREAD_CONVERSATION_ID_PATH = "metadata.partner_chat.conversation_id";
@@ -47,5 +54,3 @@ export function extractThreads(response: unknown): Record<string, unknown>[] {
   return [];
 }
 
-export const threadMatchesContact = (thread: unknown, contactId: string): boolean =>
-  THREAD_CUSTOMER_ID_PATHS.some((p) => getPath(thread, p) === contactId);

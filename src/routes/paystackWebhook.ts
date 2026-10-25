@@ -1,7 +1,8 @@
 import express, { Router } from "express";
 import { log } from "../lib/log.js";
 import type { Deps } from "../mcp/types.js";
-import { reconcilePayment } from "../services/payments.js";
+import { notifyPaymentSuccess } from "../services/notify.js";
+import { reconcilePayment, type ReconcileResult } from "../services/payments.js";
 import { verifyPaystackSignature } from "../services/paystack.js";
 
 interface PaystackEvent {
@@ -31,16 +32,21 @@ export function paystackWebhookRouter(deps: Deps, secretKey: string): Router {
     const reference = payload.data?.reference ?? null;
 
     // After a verified signature we always answer 200; errors are logged and get_payment_status can reconcile later.
+    let result: ReconcileResult | null = null;
     try {
       await deps.repo.logWebhookEvent({ event, reference, payload });
       if (event === "charge.success" && reference) {
-        const r = await reconcilePayment(reference, deps);
-        log.info("webhook processed", { event, reference, status: r.status, changed: r.changed });
+        result = await reconcilePayment(reference, deps);
+        log.info("webhook processed", { event, reference, status: result.status, changed: result.changed });
       }
     } catch (err) {
       log.error("webhook processing failed", { event, reference, error: (err as Error).message });
     }
     res.sendStatus(200);
+
+    // Only the first transition to success notifies, and only after Paystack has its 200.
+    const paid = result?.changed && result.status === "success" ? result.payment : null;
+    if (paid) deps.runInBackground(() => notifyPaymentSuccess(paid, deps));
   });
 
   return router;

@@ -4,6 +4,7 @@ import { CHORD_API_BASE } from "../config/chord.js";
 export interface ChordClient {
   listThreads(params: Record<string, string | number | undefined>): Promise<unknown>;
   getThread(id: string): Promise<unknown>;
+  listTurns(threadId: string, params: Record<string, string | number | undefined>): Promise<unknown>;
   createScheduledTask(body: Record<string, unknown>): Promise<unknown>;
   getScheduledTask(id: string): Promise<unknown>;
   takeOver(threadId: string): Promise<unknown>;
@@ -41,14 +42,12 @@ export function createChordClient(apiKey: string, fetchImpl: typeof fetch = fetc
   }
 
   const id = encodeURIComponent;
+  const query = (params: Record<string, string | number | undefined>) =>
+    new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
   return {
-    listThreads(params) {
-      const qs = new URLSearchParams(
-        Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]),
-      );
-      return call("GET", `/v1/threads?${qs}`);
-    },
+    listThreads: (params) => call("GET", `/v1/threads?${query(params)}`),
     getThread: (threadId) => call("GET", `/v1/threads/${id(threadId)}`),
+    listTurns: (threadId, params) => call("GET", `/v1/threads/${id(threadId)}/turns?${query(params)}`),
     createScheduledTask: (body) => call("POST", "/v1/scheduled-tasks", body),
     getScheduledTask: (taskId) => call("GET", `/v1/scheduled-tasks/${id(taskId)}`),
     takeOver: (threadId) => call("POST", `/v1/threads/${id(threadId)}/take-over`),

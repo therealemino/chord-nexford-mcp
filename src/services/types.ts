@@ -19,6 +19,7 @@ export interface Lead {
   eligibility_result: StoredEligibility | null;
   foundation_courses: string[] | null;
   status: LeadStatus;
+  chord_thread_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,11 +36,15 @@ export interface Payment {
   status: PaymentStatus;
   authorization_url: string | null;
   paid_at: string | null;
+  customer_notified_at: string | null;
+  notify_error: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type NewPayment = Pick<Payment, "lead_id" | "paystack_reference" | "purpose" | "amount_kobo" | "currency" | "authorization_url">;
+
+export type HandoffStatus = "pending" | "contacted" | "closed";
 
 export interface NewHandoff {
   lead_id: string;
@@ -48,7 +53,26 @@ export interface NewHandoff {
   channel: "whatsapp" | "call";
   callback_number: string | null;
   callback_time: string | null;
+  /** Only for reason = new_applicant (unique per payment). */
+  payment_id?: string;
 }
+
+export interface Handoff extends Required<NewHandoff> {
+  id: string;
+  status: HandoffStatus;
+  notes: string | null;
+  contacted_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+  payment_id: string;
+}
+
+/** A handoff with the lead fields admin views need. */
+export interface HandoffWithLead extends Handoff {
+  lead: { full_name: string | null; programme: string | null; contact_id: string } | null;
+}
+
+export type HandoffPatch = Partial<Pick<Handoff, "status" | "notes" | "contacted_at" | "closed_at">>;
 
 /** Everything the app needs from the database. Implemented by Supabase in production and by a fake in tests. */
 export interface Repo {
@@ -66,6 +90,23 @@ export interface Repo {
   /** Sets a non-success status only if the payment is not already success. Returns the row if it changed, else null. */
   markPaymentStatus(reference: string, status: Exclude<PaymentStatus, "success">): Promise<Payment | null>;
 
+  /** Records whether/why the customer was told about a successful payment. */
+  updatePaymentNotification(id: string, patch: Pick<Payment, "customer_notified_at" | "notify_error">): Promise<void>;
+
   insertHandoff(h: NewHandoff): Promise<void>;
+  /** Inserts a new_applicant handoff unless one already exists for h.payment_id. Returns true if inserted. */
+  insertHandoffOnce(h: NewHandoff & { payment_id: string }): Promise<boolean>;
+  latestCallbackHandoff(leadId: string): Promise<Handoff | null>;
+
+  // Admin
+  leadsCreatedBetween(fromIso: string, toIso: string): Promise<Lead[]>;
+  paymentsPaidBetween(fromIso: string, toIso: string): Promise<Payment[]>;
+  handoffsByStatus(statuses: HandoffStatus[], limit: number): Promise<HandoffWithLead[]>;
+  getHandoff(id: string): Promise<Handoff | null>;
+  updateHandoff(id: string, patch: HandoffPatch): Promise<Handoff>;
+  /** Up to `limit` leads matching contact_id exactly, email (case-insensitive) or a name fragment. */
+  searchLeads(query: string, limit: number): Promise<Lead[]>;
+  handoffsForLead(leadId: string): Promise<Handoff[]>;
+
   logWebhookEvent(e: { event: string; reference: string | null; payload: unknown }): Promise<void>;
 }

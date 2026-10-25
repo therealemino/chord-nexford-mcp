@@ -1,5 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Lead, Payment, Repo } from "./types.js";
+import type { Handoff, HandoffWithLead, Lead, Payment, Repo } from "./types.js";
+
+/** Escapes LIKE wildcards in user-supplied search text. */
+const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 function must<T>(result: { data: T | null; error: { message: string } | null }, what: string): T {
   if (result.error) throw new Error(`${what}: ${result.error.message}`);
@@ -77,8 +80,77 @@ export function createSupabaseRepo(url: string, serviceRoleKey: string): Repo {
       return rows[0] ?? null;
     },
 
+    async updatePaymentNotification(id, patch) {
+      must(await db.from("payments").update(patch).eq("id", id), "updatePaymentNotification");
+    },
+
     async insertHandoff(h) {
       must(await db.from("handoffs").insert(h), "insertHandoff");
+    },
+    async insertHandoffOnce(h) {
+      const rows = must(
+        await db.from("handoffs").upsert(h, { onConflict: "payment_id", ignoreDuplicates: true }).select("id"),
+        "insertHandoffOnce",
+      ) as { id: string }[];
+      return rows.length > 0;
+    },
+    async latestCallbackHandoff(leadId) {
+      return must(
+        await db
+          .from("handoffs")
+          .select("*")
+          .eq("lead_id", leadId)
+          .eq("channel", "call")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<Handoff>(),
+        "latestCallbackHandoff",
+      );
+    },
+
+    async leadsCreatedBetween(fromIso, toIso) {
+      return must(await db.from("leads").select("*").gte("created_at", fromIso).lt("created_at", toIso), "leadsCreatedBetween") as Lead[];
+    },
+    async paymentsPaidBetween(fromIso, toIso) {
+      return must(
+        await db.from("payments").select("*").eq("status", "success").gte("paid_at", fromIso).lt("paid_at", toIso),
+        "paymentsPaidBetween",
+      ) as Payment[];
+    },
+    async handoffsByStatus(statuses, limit) {
+      const rows = must(
+        await db
+          .from("handoffs")
+          .select("*, lead:leads(full_name, programme, contact_id)")
+          .in("status", statuses)
+          .order("created_at", { ascending: true })
+          .limit(limit),
+        "handoffsByStatus",
+      );
+      return rows as HandoffWithLead[];
+    },
+    async getHandoff(id) {
+      return must(await db.from("handoffs").select("*").eq("id", id).maybeSingle<Handoff>(), "getHandoff");
+    },
+    async updateHandoff(id, patch) {
+      return must(await db.from("handoffs").update(patch).eq("id", id).select("*").single<Handoff>(), "updateHandoff");
+    },
+    async searchLeads(query, limit) {
+      const q = query.trim();
+      const pattern = `%${likeEscape(q)}%`;
+      const [byContact, byEmail, byName] = await Promise.all([
+        db.from("leads").select("*").eq("contact_id", q).limit(limit),
+        db.from("leads").select("*").ilike("email", likeEscape(q)).limit(limit),
+        db.from("leads").select("*").ilike("full_name", pattern).order("created_at", { ascending: false }).limit(limit),
+      ]);
+      const all = [byContact, byEmail, byName].flatMap((r) => must(r, "searchLeads") as Lead[]);
+      return [...new Map(all.map((l) => [l.id, l])).values()].slice(0, limit);
+    },
+    async handoffsForLead(leadId) {
+      return must(
+        await db.from("handoffs").select("*").eq("lead_id", leadId).order("created_at", { ascending: true }),
+        "handoffsForLead",
+      ) as Handoff[];
     },
     async logWebhookEvent(e) {
       must(await db.from("webhook_events").insert({ provider: "paystack", ...e }), "logWebhookEvent");
