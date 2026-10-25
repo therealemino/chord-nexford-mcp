@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "tsx scripts/smoke.ts",
     "db:push": "tsx scripts/db.ts push",
-    "db:seed": "tsx scripts/db.ts seed"
+    "db:seed": "tsx scripts/db.ts seed",
+    "chord:discover": "tsx scripts/chord-discover.ts"
   },
   "license": "UNLICENSED",
   "type": "module",

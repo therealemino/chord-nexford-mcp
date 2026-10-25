@@ -19,6 +19,7 @@ export function mcpRouter(deps: Deps, bearerToken: string): Router {
   router.use(requireBearer);
 
   router.post("/", async (req, res) => {
+    if (process.env.LOG_MCP_CONTEXT === "1") logToolCallContext(req.headers, req.body);
     // Stateless: new server + transport per request, no session ids.
     const server = buildMcpServer(deps);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
@@ -42,4 +43,21 @@ export function mcpRouter(deps: Deps, bearerToken: string): Router {
   router.delete("/", notAllowed);
 
   return router;
+}
+
+const HIDDEN_HEADERS = new Set(["authorization", "cookie", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip"]);
+
+/**
+ * Temporary discovery aid (LOG_MCP_CONTEXT=1): shows what Chord sends with a tool call, to find a thread
+ * identifier we can link to contact_id. Logs headers (minus credentials and IPs), _meta and contact_id only.
+ */
+function logToolCallContext(headers: Record<string, unknown>, body: unknown) {
+  const msg = body as { method?: string; params?: { name?: string; _meta?: unknown; arguments?: { contact_id?: unknown } } };
+  if (msg?.method !== "tools/call") return;
+  log.info("mcp tool call context", {
+    tool: msg.params?.name,
+    contact_id: String(msg.params?.arguments?.contact_id ?? ""),
+    meta: JSON.stringify(msg.params?._meta ?? null),
+    headers: JSON.stringify(Object.fromEntries(Object.entries(headers).filter(([k]) => !HIDDEN_HEADERS.has(k)))),
+  });
 }
