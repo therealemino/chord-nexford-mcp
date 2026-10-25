@@ -17,13 +17,18 @@
  *       Take over the thread, post <text> as an operator message, then hand back. Hands back only if this
  *       script did the take-over (a thread already under human control is left with the human).
  *       The customer WILL see Chord's take-over acknowledgement and the message.
+ *
+ *   pnpm chord:discover --thread <thread_id> --try-flag ["<comment>"]
+ *       Thumbs-down feedback on the thread's latest agent turn, trying candidate body shapes until one is accepted,
+ *       then prints the thread's review_state before and after. The thread should appear in the dashboard's review
+ *       queue; the customer sees nothing.
  */
 import "dotenv/config";
 import { parseArgs } from "node:util";
 import { ChordError, createChordClient } from "../src/services/chord.js";
 import { buildOperatorMessageBody, extractThreads, getPath } from "../src/config/chord.js";
 
-const { values } = parseArgs({ options: { thread: { type: "string" }, "try-message": { type: "string" }, limit: { type: "string" }, "delay-seconds": { type: "string" }, task: { type: "string" }, "try-takeover": { type: "string" } } });
+const { values } = parseArgs({ options: { thread: { type: "string" }, "try-message": { type: "string" }, limit: { type: "string" }, "delay-seconds": { type: "string" }, task: { type: "string" }, "try-takeover": { type: "string" }, "try-flag": { type: "string" } } });
 
 const missing = ["CHORD_API_KEY", "CHORD_WORKSPACE_ID", "CHORD_TEAMMATE_ID"].filter((k) => !process.env[k]);
 if (missing.length) {
@@ -140,7 +145,49 @@ if (values.thread && values["try-takeover"]) {
   }
 }
 
-if (!values.task && !values["try-message"] && !values["try-takeover"] && values.thread) {
-  console.error("\n--thread needs --try-message or --try-takeover.");
+// 5. Flag for review via thumbs-down feedback on the latest agent turn
+if (values.thread && values["try-flag"] !== undefined) {
+  const thread_id = values.thread;
+  const comment = values["try-flag"] || "TEST FLAG from discovery script, please ignore";
+  let latest: { id?: string; timestamp?: number } | null = null;
+  let cursor: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const res = await chord.listTurns(thread_id, { limit: 50, cursor });
+    for (const t of (getPath(res, "turns") as Record<string, unknown>[] | undefined) ?? []) {
+      if (getPath(t, "sender.kind") === "agent" && (!latest || Number(t.timestamp) > Number(latest.timestamp))) latest = t;
+    }
+    cursor = getPath(res, "next_cursor") as string | undefined;
+    if (!getPath(res, "has_more") || !cursor) break;
+  }
+  if (!latest?.id) {
+    console.log("\nNo agent turn found on this thread.");
+  } else {
+    console.log(`\nLatest agent turn: ${latest.id} at ${new Date(Number(latest.timestamp)).toISOString()}`);
+    console.log(`review_state before: ${String(getPath(await chord.getThread(thread_id), "review_state"))}`);
+    const candidates: [string, Record<string, unknown>][] = [
+      ["{ rating: 'negative', comment }", { rating: "negative", comment }],
+      ["{ rating: 'THUMBS_DOWN', comment }", { rating: "THUMBS_DOWN", comment }],
+      ["{ rating: 'down', correction }", { rating: "down", correction: comment }],
+      ["{ thumbs_up: false, comment }", { thumbs_up: false, comment }],
+      ["{ value: -1, comment }", { value: -1, comment }],
+    ];
+    let accepted: string | null = null;
+    for (const [name, body] of candidates) {
+      try {
+        show(`ACCEPTED feedback ${name}`, await chord.postTurnFeedback(thread_id, latest.id, body));
+        accepted = name;
+        break;
+      } catch (err) {
+        show(`Rejected feedback ${name}`, errorInfo(err));
+      }
+    }
+    const after = await chord.getThread(thread_id);
+    console.log(`\nreview_state after: ${String(getPath(after, "review_state"))}`);
+    console.log(accepted ? `Result: Chord accepted ${accepted}. Check the dashboard's "Needs you" / review queue.` : "Result: no feedback shape was accepted.");
+  }
+}
+
+if (!values.task && !values["try-message"] && !values["try-takeover"] && values["try-flag"] === undefined && values.thread) {
+  console.error("\n--thread needs --try-message, --try-takeover or --try-flag.");
   process.exit(1);
 }

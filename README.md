@@ -94,7 +94,9 @@ The `contact_id` the agent passes (`customer_…`) doesn't appear anywhere Chord
 | `scheduled_task` | `POST /v1/scheduled-tasks` with a `MESSAGE` payload of `{ conversation_id, body }`. In testing (25 Oct 2026) Chord accepted these tasks but every one failed inside Chord with `tenant_id is required in x-tenant-id header`. It's kept for when that's fixed |
 | `off` | No messages; the `CHORD_*` variables aren't required |
 
-`pnpm chord:discover` is the tool used to find these API shapes: listing threads, `--task <id>`, `--thread <id> --try-message` and `--thread <id> --try-takeover`.
+`pnpm chord:discover` is the tool used to find these API shapes: listing threads, `--task <id>`, `--thread <id> --try-message`, `--thread <id> --try-takeover` and `--thread <id> --try-flag`. The last one showed that thumbs-down feedback on the latest agent turn, `{ rating: "down", correction }`, sets the thread's `review_state` to `needs_review`.
+
+`pnpm chord:setup-alerts` (one-time, safe to rerun) points Chord's own take-over escalation email at `ALERT_EMAIL_TO`, or at `--notify-to`. It also tries to create backup keyword escalation rules, which Chord now rejects (see "Known Chord issues").
 
 ## Layout
 
@@ -112,6 +114,7 @@ supabase/                migration + seed
 scripts/smoke.ts         calls every tool once against a running server
 scripts/db.ts            db:push (migrations) and db:seed
 scripts/chord-discover.ts  probes undocumented Chord API shapes
+scripts/chord-setup-alerts.ts  one-time Chord escalation email setup
 test/                    Vitest suite (Supabase and Paystack faked in memory)
 ```
 
@@ -271,6 +274,16 @@ For a demo, run it immediately instead of waiting until 09:00:
 curl -X POST "$CHORD/teammates/$OPS_ID/schedules/$SCHEDULE_ID/run" \
   -H "Authorization: Bearer $CHORD_API_KEY"
 ```
+
+## Known Chord issues (found 25 Oct 2026)
+
+These are on Chord's side. Our server's behaviour and the evidence are recorded so they can be raised with Chord.
+
+- **The WhatsApp simulator doesn't show operator or system messages.** After a payment, the server takes over the thread, posts "Payment received ✅ …" and hands back. Chord's turns API records our message and Chord's own take-over acknowledgement ("One moment — connecting you with a teammate.") as `delivery_status: "sent"`, the control-events log shows `agent_active → human_active → agent_active`, and both messages appear in the Chord dashboard. Neither appears in the simulator (chat.tsglabs.dev), even after refreshing, and a message typed by hand after **Take over** in the dashboard doesn't arrive either. Agent messages arrive normally. For demos, show the confirmation in the dashboard thread view.
+- **Scheduled `MESSAGE` tasks fail inside Chord.** `POST /v1/scheduled-tasks` accepts a payload of `{ conversation_id, body }`, but every task then fails with `UNAUTHENTICATED: tenant_id is required in x-tenant-id header`, even with that header on our request. That's why `CHORD_NOTIFY_STRATEGY` defaults to `takeover`.
+- **Escalation rules are deprecated.** `POST /v1/escalation-rules` returns `ESCALATION_RULES_DEPRECATED` ("create an escalation trigger instead"), and no trigger endpoint exists in the API. `pnpm chord:setup-alerts` therefore only sets the escalation email. The backup trigger ("escalate when the customer asks to speak to a human or to be called") has to be added by hand in the dashboard.
+- **The `customer_…` contact id isn't exposed on threads.** It isn't in thread fields, turns, request headers or MCP `_meta`, so threads are found from tool-use timing (see "How the Chord thread is found"). A new simulator conversation also gets a new `customer_…` id, so the same person in a new chat becomes a new lead.
+- **The Ops teammate's chats failed with "Billing settlement failed after the model completed"**, costing about 3 credits per message. In that session the agent never called the admin tools ("admin server unreachable in this session"), although Chord's own tool listing reaches `/mcp-admin` fine. The admin endpoint works from any MCP client, e.g. `npx @modelcontextprotocol/inspector` with the admin bearer token.
 
 ## Assumptions and open questions
 

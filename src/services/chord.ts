@@ -10,6 +10,12 @@ export interface ChordClient {
   takeOver(threadId: string): Promise<unknown>;
   sendMessage(threadId: string, body: Record<string, unknown>): Promise<unknown>;
   handBack(threadId: string): Promise<unknown>;
+  postTurnFeedback(threadId: string, turnId: string, body: Record<string, unknown>): Promise<unknown>;
+  listControlEvents(threadId: string): Promise<unknown>;
+  setEscalationNotifications(teammateId: string, body: Record<string, unknown>): Promise<unknown>;
+  listEscalationRules(params: Record<string, string | number | undefined>): Promise<unknown>;
+  createEscalationRule(body: Record<string, unknown>): Promise<unknown>;
+  attachEscalationRule(ruleId: string, teammateId: string): Promise<unknown>;
 }
 
 export class ChordError extends Error {
@@ -23,7 +29,7 @@ export class ChordError extends Error {
 }
 
 export function createChordClient(apiKey: string, fetchImpl: typeof fetch = fetch): ChordClient {
-  async function call(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+  async function call(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<unknown> {
     const res = await fetchImpl(`${CHORD_API_BASE}${path}`, {
       method,
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -53,5 +59,11 @@ export function createChordClient(apiKey: string, fetchImpl: typeof fetch = fetc
     takeOver: (threadId) => call("POST", `/v1/threads/${id(threadId)}/take-over`),
     sendMessage: (threadId, body) => call("POST", `/v1/threads/${id(threadId)}/messages`, body),
     handBack: (threadId) => call("POST", `/v1/threads/${id(threadId)}/hand-back`),
+    postTurnFeedback: (threadId, turnId, body) => call("POST", `/v1/threads/${id(threadId)}/turns/${id(turnId)}/feedback`, body),
+    listControlEvents: (threadId) => call("GET", `/v1/threads/${id(threadId)}/control-events`),
+    setEscalationNotifications: (teammateId, body) => call("PUT", `/v1/teammates/${id(teammateId)}/escalation-notifications`, body),
+    listEscalationRules: (params) => call("GET", `/v1/escalation-rules?${query(params)}`),
+    createEscalationRule: (body) => call("POST", "/v1/escalation-rules", body),
+    attachEscalationRule: (ruleId, teammateId) => call("POST", `/v1/escalation-rules/${id(ruleId)}/teammates/${id(teammateId)}`),
   };
 }

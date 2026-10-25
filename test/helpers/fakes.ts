@@ -183,6 +183,12 @@ export function fakeChord() {
     takeOver: vi.fn(async (id: string) => ({ id, control_state: "human_active" })),
     sendMessage: vi.fn(async (id: string) => ({ thread_id: id, delivery_status: "sent" })),
     handBack: vi.fn(async (id: string) => ({ id, control_state: "agent_active" })),
+    postTurnFeedback: vi.fn(async () => ({})),
+    listControlEvents: vi.fn(async () => ({ events: [] })),
+    setEscalationNotifications: vi.fn(async () => ({})),
+    listEscalationRules: vi.fn(async () => ({ rules: [] })),
+    createEscalationRule: vi.fn(async (body: Record<string, unknown>) => ({ id: "rule_1", ...body })),
+    attachEscalationRule: vi.fn(async () => ({})),
   } satisfies ChordClient;
 
   /** Adds a customer thread whose agent used `tool` (default create_application_payment) at `atMs`. */
