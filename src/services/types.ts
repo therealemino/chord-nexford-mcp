@@ -121,5 +121,10 @@ export interface Repo {
   searchLeads(query: string, limit: number): Promise<Lead[]>;
   handoffsForLead(leadId: string): Promise<Handoff[]>;
 
+  // Dashboard (prototype scale: whole tables, capped)
+  allLeads(): Promise<Lead[]>;
+  allPayments(): Promise<Payment[]>;
+  allHandoffs(): Promise<Handoff[]>;
+
   logWebhookEvent(e: { event: string; reference: string | null; payload: unknown }): Promise<void>;
 }

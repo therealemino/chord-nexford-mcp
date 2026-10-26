@@ -27,6 +27,7 @@ The server exposes:
 | `POST /mcp-admin` | Staff tools for the Ops teammate (a separate bearer token) |
 | `POST /webhooks/paystack` | Paystack webhook (signature verified) |
 | `GET /payments/callback` | Page Paystack returns to after checkout |
+| `GET /dashboard` | Staff dashboard: leads, conversion, payments, follow-ups (Supabase admin login) |
 | `GET /health` | Health check |
 
 **Customer tools:**
@@ -102,6 +103,28 @@ curl -X PUT "$CHORD/teammates/$OPS_TEAMMATE_ID" -H "$AUTH" -H "Content-Type: app
 Assign both teammates explicitly. A teammate with an empty list can use every server in the workspace, which would expose the admin tools in customer chats.
 
 For the Ops teammate, create an internal teammate with no customer channels and add `docs/ops-teammate-skill.md` as its skill.
+
+## Dashboard
+
+Create a staff login (a Supabase Auth user marked as admin), then open `<PUBLIC_BASE_URL>/dashboard`:
+
+```bash
+pnpm dashboard:user --email you@example.com --password '<at least 8 characters>'
+```
+
+Only users created this way can sign in. Anyone else who signs up to the Supabase project is refused, because only the server can mark a user as admin.
+
+It has three screens:
+- **Overview** (today, 7 days, 30 days or all time):
+  - new leads, how many paid, conversion and fees received
+  - the funnel: enquired, eligibility checked, payment link sent, paid
+  - leads and payments per day
+  - paid after talking to a person vs with the AI only, and time to pay
+  - results by programme and country, and the eligibility mix
+- **Leads:** a searchable list with each lead's status, eligibility and payment.
+- **Follow-ups:** open handoffs (overdue callbacks first) and payment links that haven't been paid.
+
+Tables sort when you click a column header, and the **Columns** menu shows or hides columns. **View** opens a row's full details, including the handoff summary.
 
 ## Test it
 

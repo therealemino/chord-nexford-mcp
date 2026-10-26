@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Handoff, HandoffWithLead, Lead, Payment, Repo } from "./types.js";
 
+/** Enough for the prototype; beyond this the dashboard would need paginated, aggregated queries. */
+const DASHBOARD_ROW_LIMIT = 5000;
+
 /** Escapes LIKE wildcards in user-supplied search text. */
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
@@ -178,6 +181,15 @@ export function createSupabaseRepo(url: string, serviceRoleKey: string): Repo {
       ]);
       const all = [byContact, byEmail, byName].flatMap((r) => must(r, "searchLeads") as Lead[]);
       return [...new Map(all.map((l) => [l.id, l])).values()].slice(0, limit);
+    },
+    async allLeads() {
+      return must(await db.from("leads").select("*").order("created_at", { ascending: false }).limit(DASHBOARD_ROW_LIMIT), "allLeads") as Lead[];
+    },
+    async allPayments() {
+      return must(await db.from("payments").select("*").order("created_at", { ascending: false }).limit(DASHBOARD_ROW_LIMIT), "allPayments") as Payment[];
+    },
+    async allHandoffs() {
+      return must(await db.from("handoffs").select("*").order("created_at", { ascending: false }).limit(DASHBOARD_ROW_LIMIT), "allHandoffs") as Handoff[];
     },
     async handoffsForLead(leadId) {
       return must(

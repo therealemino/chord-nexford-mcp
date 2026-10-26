@@ -141,6 +141,15 @@ export function fakeRepo() {
         .filter((l) => l.contact_id === query || l.email?.toLowerCase() === q || l.full_name?.toLowerCase().includes(q))
         .slice(0, limit);
     },
+    async allLeads() {
+      return [...leads];
+    },
+    async allPayments() {
+      return [...payments];
+    },
+    async allHandoffs() {
+      return [...handoffs];
+    },
     async handoffsForLead(leadId) {
       return handoffs.filter((h) => h.lead_id === leadId);
     },

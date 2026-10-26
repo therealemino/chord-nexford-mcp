@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 import { log } from "./lib/log.js";
+import { createSupabaseAdminAuth } from "./services/adminAuth.js";
 import { createChordClient } from "./services/chord.js";
 import { createResendSender } from "./services/email.js";
 import { createPaystackClient } from "./services/paystack.js";
@@ -38,7 +39,9 @@ const app = createApp(
       task().catch((err) => log.error("background task failed", { error: (err as Error).message }));
     },
   },
-  { mcpBearerToken: env.MCP_BEARER_TOKEN, adminBearerToken: env.ADMIN_MCP_BEARER_TOKEN, paystackSecretKey: env.PAYSTACK_SECRET_KEY },
+  { mcpBearerToken: env.MCP_BEARER_TOKEN, adminBearerToken: env.ADMIN_MCP_BEARER_TOKEN, paystackSecretKey: env.PAYSTACK_SECRET_KEY,
+    dashboardAuth: createSupabaseAdminAuth(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY),
+  },
 );
 
 for (const warning of env.warnings) log.warn(warning);
