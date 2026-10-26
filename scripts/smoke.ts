@@ -8,7 +8,7 @@ import "dotenv/config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const url = process.env.MCP_URL ?? `${(process.env.PUBLIC_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "")}/mcp`;
+const url = process.env.MCP_URL || `${(process.env.PUBLIC_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, "")}/mcp`;
 const token = process.env.MCP_BEARER_TOKEN;
 if (!token) {
   console.error("Set MCP_BEARER_TOKEN (and MCP_URL or PUBLIC_BASE_URL).");
