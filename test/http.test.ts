@@ -63,7 +63,7 @@ describe("/mcp protocol", () => {
 
   it("calls a tool and returns JSON text; invalid input is ok:false, not a protocol error", async () => {
     const good = await mcp(TOKEN).send(rpc("tools/call", { name: "get_tuition", arguments: { programme: "BBA", country: "Nigeria" } }));
-    expect(JSON.parse(good.body.result.content[0].text)).toMatchObject({ ok: true, usd: 120 });
+    expect(JSON.parse(good.body.result.content[0].text)).toMatchObject({ ok: true, price_usd: 120 });
 
     const bad = await mcp(TOKEN).send(rpc("tools/call", { name: "get_tuition", arguments: { programme: "BBA" } }));
     expect(bad.body.error).toBeUndefined();

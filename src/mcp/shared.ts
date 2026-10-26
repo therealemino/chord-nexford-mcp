@@ -21,13 +21,13 @@ export const programmeField = z
   .max(120)
   .describe(
     `Programme the person is interested in, including any MBA specialisation, e.g. "MBA in Fintech and Blockchain". ` +
-      `Known ids: ${PROGRAMME_IDS.join(", ")}. MBA in Finance and MBA in Entrepreneurship are separate programmes, not specialisations.`,
+      `Known ids: ${PROGRAMME_IDS.join(", ")}. MBA in Finance is a separate programme, not a specialisation.`,
   );
 
 /** Appended to every customer tool's agent_guidance. */
 export const WHATSAPP_FORMAT =
-  "Formatting: this is WhatsApp. Plain text only, no asterisks, no Markdown (no **, #, or [links](...)). " +
-  "If you need a section label, put it on its own line ending with a colon. Keep messages short.";
+  "Formatting: this is WhatsApp. Plain text only, with no asterisks, hash signs or Markdown links. " +
+  "Put a section label on its own line ending with a colon, use hyphen lists only for three or more items, and keep messages short.";
 
 export const countryField = z.string().trim().min(2).max(100).describe("Country of residence, e.g. Nigeria, Ghana, Kenya.");
 

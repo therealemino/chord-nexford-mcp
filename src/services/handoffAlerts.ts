@@ -1,5 +1,7 @@
 import { DateTime } from "luxon";
 import { HANDOFF_TOOL_SUFFIX, PAYMENT_TOOL_SUFFIX } from "../config/chord.js";
+import { APPLICATION_FEE_USD } from "../config/constants.js";
+import { formatUsd } from "../config/fx.js";
 import { APPLICANT_ZONE, SPECIALIST_ZONE } from "../config/hours.js";
 import { waiverRequestable } from "../lib/eligibility.js";
 import { log } from "../lib/log.js";
@@ -39,7 +41,7 @@ export function buildHandoffEmail({ handoff: h, lead, payment, threadUrl }: Hand
       ? `[Callback] Call ${name} at ${lagosShort} Lagos (${etShort} ET)`
       : `[Callback] Call ${name} during specialist hours (no time agreed)`,
     chat: `[Chat handoff] ${name} wants a specialist on WhatsApp`,
-    new_applicant: `[New applicant] ${name} paid the $25 fee for ${programme}`,
+    new_applicant: `[New applicant] ${name} paid the ${formatUsd(APPLICATION_FEE_USD)} fee for ${programme}`,
   }[kind];
 
   const action = {

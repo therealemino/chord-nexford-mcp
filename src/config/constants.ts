@@ -1,5 +1,4 @@
-export const APPLICATION_FEE_USD = 25;
-export const APPLICATION_FEE_REFUNDABLE = false;
+export { APPLICATION_FEE_REFUNDABLE, APPLICATION_FEE_USD } from "./tuition.js";
 
 export const ADVISOR_BOOKING_LINK = "https://hub.nexford.edu/meetings/nxu/consultation";
 export const TUITION_CALCULATOR_LINK = "https://www.nexford.edu/tuition";

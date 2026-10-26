@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { APPLICATION_FEE_USD } from "../config/constants.js";
 import { buildMessagePayload, buildOperatorMessageBody, getPath, THREAD_CONVERSATION_ID_PATH } from "../config/chord.js";
-import { toLocal } from "../config/fx.js";
+import { formatLocal, formatUsd, toLocal } from "../config/fx.js";
 import { log } from "../lib/log.js";
 import type { ChordDeps } from "../mcp/types.js";
 import type { ChordClient } from "./chord.js";
@@ -16,7 +16,7 @@ const firstWord = (s: string | null | undefined) => s?.trim().split(/\s+/)[0] ||
 /** WhatsApp-friendly confirmation: plain text, short. */
 export function confirmationMessage(lead: Lead, displayName: string | null): string {
   const name = firstWord(displayName) ?? firstWord(lead.full_name);
-  const fee = `$${APPLICATION_FEE_USD} application fee (₦${toLocal(APPLICATION_FEE_USD, "NGN").toLocaleString("en-US")})`;
+  const fee = `${formatUsd(APPLICATION_FEE_USD)} application fee (${formatLocal(toLocal(APPLICATION_FEE_USD, "NGN"), "NGN")})`;
   return (
     `Payment received ✅ Your ${fee} has come through${name ? `, ${name}` : ""}. ` +
     `Your application is now with our admissions team, and an Application Specialist will be in touch about next steps` +

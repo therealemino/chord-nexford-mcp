@@ -42,7 +42,7 @@ describe("payment success side effects", () => {
 
     const [, body] = t.chord.client.sendMessage.mock.calls[0] as unknown as [string, { text: string }];
     expect(body.text).toContain("Payment received ✅ Your $25 application fee (₦33,217) has come through, Peace.");
-    expect(body.text).toContain("next steps for the MBA with a Fintech and Blockchain specialisation.");
+    expect(body.text).toContain("next steps for the MBA in Fintech and Blockchain.");
   });
 
   it("when get_payment_status confirms first, the agent tells them in-chat and no proactive message is sent", async () => {
@@ -121,7 +121,7 @@ describe("payment success side effects", () => {
     await callTool("handoff_to_advisor", { contact_id: "customer_peace", reason: "scholarship_or_funding", summary: "Wants to discuss scholarships for the MBA specialisation.", channel: "call", callback_number: "+2349032234467" }, t.deps);
     await t.webhook();
     const summary = t.newApplicant()[0].summary;
-    expect(summary).toContain("Programme: MBA with a Fintech and Blockchain specialisation.");
+    expect(summary).toContain("Programme: MBA in Fintech and Blockchain.");
     expect(summary).toContain("Eligibility: foundation_likely (FND 5100); waiver can be requested: yes.");
     expect(summary).toContain(`Payment ref: ${t.created.reference}.`);
     expect(summary).toContain("Callback requested: +2349032234467, no time agreed (pending).");

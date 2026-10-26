@@ -47,25 +47,26 @@ describe("assess_eligibility", () => {
 });
 
 describe("get_tuition", () => {
-  it("returns Ghana MBA as unavailable with the calculator link", async () => {
+  it("returns an untiered country as unavailable with the calculator link", async () => {
     const { deps } = makeDeps();
-    const out = await callTool("get_tuition", { programme: "MBA", country: "Ghana" }, deps);
-    expect(out).toMatchObject({ ok: true, available: false, tuition_calculator: "https://www.nexford.edu/tuition" });
+    const out = await callTool("get_tuition", { programme: "MBA", country: "Ethiopia" }, deps);
+    expect(out).toMatchObject({ ok: true, available: false, reason: "unknown_country", calculator_url: "https://www.nexford.edu/tuition" });
   });
 
   it("returns the Nigeria MBA price with guidance about the current rate", async () => {
     const { deps } = makeDeps();
     const out = await callTool("get_tuition", { programme: "MBA", country: "Nigeria" }, deps);
-    expect(out).toMatchObject({ ok: true, usd: 275, local: { currency: "NGN", amount: 365_385 } });
+    expect(out).toMatchObject({ ok: true, price_usd: 275, price_local: { currency: "NGN", amount: 365_385 } });
     expect(out.agent_guidance).toMatch(/at Nexford's current rate/);
   });
 
   it("keeps the specialisation name and stores it on the lead", async () => {
     const { deps, db } = makeDeps();
     const out = await callTool("get_tuition", { programme: "MBA in Fintech and Blockchain", country: "Nigeria" }, deps);
-    expect(out.agent_guidance).toMatch(/the MBA with a Fintech and Blockchain specialisation is \$275 a month/);
+    expect(out).toMatchObject({ programme: "MBA in Fintech and Blockchain", specialisation: "Fintech and Blockchain", price_usd: 275 });
+    expect(out.agent_guidance).toContain("Say the Fintech and Blockchain specialisation costs the same as the standard MBA.");
     await callTool("save_lead", { contact_id: "f1", programme: "mba fintech and blockchain" }, deps);
-    expect(db.leads[0].programme).toBe("MBA with a Fintech and Blockchain specialisation");
+    expect(db.leads[0].programme).toBe("MBA in Fintech and Blockchain");
   });
 });
 
@@ -82,8 +83,8 @@ describe("customer guidance formatting", () => {
       await callTool("save_lead", { contact_id: "g1", email: "bad" }, deps),
     ];
     for (const out of outs) {
-      expect(out.agent_guidance).toMatch(/Plain text only, no asterisks/);
-      expect(String(out.agent_guidance).replace(/\(no \*\*.*?\)/, "")).not.toMatch(/\*/);
+      expect(out.agent_guidance).toMatch(/Plain text only, with no asterisks/);
+      expect(out.agent_guidance).not.toMatch(/[*#]/);
     }
   });
 });

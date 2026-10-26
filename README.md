@@ -28,12 +28,31 @@ Every tool returns JSON: `ok`, the data, and `agent_guidance` (how to phrase the
 | --- | --- |
 | `save_lead` | Create or update the lead for `contact_id`; only the fields you pass are written |
 | `assess_eligibility` | `direct_entry` / `foundation_likely` (with course codes, waiver flag) / `advisor_review` / `not_eligible` / `need_more_info`; saves the result on the lead |
-| `get_tuition` | Published USD price and billing unit, local currency at Nexford's rate where published, MBA 9/18-month examples; `available: false` otherwise |
+| `get_tuition` | Nexford's tier price for a programme in a country: USD and local currency, billing basis (per month or per course), length and course count, 9/18-month totals for the MBA family and MS degrees. Otherwise `available: false` with a reason: `unknown_country`, `unknown_programme`, `ambiguous_programme` (with candidates) or `not_offered_via_tool`. An optional `contact_id` saves the programme and country to the lead |
 | `create_application_payment` | Paystack transaction for 3,321,700 kobo. Reuses a pending link under 30 min old; never charges twice |
 | `get_payment_status` | Latest application-fee status; if pending, re-verifies with Paystack (covers a missed webhook) |
 | `handoff_to_advisor` | Records a handoff (WhatsApp or call). Callback times are checked against specialist hours; outside them, nothing is saved and three alternative times (Lagos time) come back |
 
-Customer guidance always ends with WhatsApp formatting rules (plain text, no asterisks or Markdown, section labels on their own line). MBA specialisations (AI, Cybersecurity, Enabling E-Commerce, Fintech and Blockchain, International Business, Sustainability, Healthcare Management) are priced and assessed as the MBA and keep their name. MBA in Finance and MBA in Entrepreneurship are separate programmes.
+Customer guidance always ends with WhatsApp formatting rules (plain text, no asterisks or Markdown, section labels on their own line). MBA specialisations (AI, Cybersecurity, Enabling E-Commerce, Fintech and Blockchain, International Business, Sustainability, Healthcare Management) are priced and assessed as the MBA and keep their name, e.g. "MBA in Fintech and Blockchain". MBA in Entrepreneurship is priced as the MBA but has no published foundation rule. MBA in Finance is not a specialisation: it's priced with the MS degrees.
+
+### Pricing
+
+All pricing data is in [src/config/tuition.ts](src/config/tuition.ts), and a test fails if a price or exchange-rate literal appears anywhere else in `src/`. That file holds:
+- the tier price table
+- the countries per tier, with their name, ISO-code and informal aliases
+- programme aliases and published facts (course count, structure, length)
+- exchange rates
+- the source URL and the date it was checked
+
+The source is Nexford's catalogue page "Learner account, tuition and fees", checked 26 October 2026.
+
+Only the example countries the catalogue lists are tiered:
+- Tier 1: United States, United Kingdom, Canada
+- Tier 2: China, Turkey, and Saudi Arabia (from Nexford's refund-policy examples)
+- Tier 3: Egypt, Indonesia, Kenya, Philippines, Thailand
+- Tier 4: Nigeria, Ghana
+
+Any other country gets `unknown_country` and the tuition calculator link, even if Nexford publishes an exchange rate for it (e.g. South Africa).
 
 ### Admin tools (`/mcp-admin`)
 
@@ -289,9 +308,9 @@ These are on Chord's side. Our server's behaviour and the evidence are recorded 
 
 - **Chord's contact identifier** is Chord's customer id (`customer_…`), not a phone number. The agent can't see the sender's number and must ask for it. `normaliseContactId()` in `src/lib/contact.ts` still isolates the format. Chord exposes no link from that id to a thread, so the thread is found from tool-use timing (see "How the Chord thread is found").
 - **Specialist hours** are treated as 07:00–18:00 America/New_York **every day** (Nexford says "most days"). Suggested callback slots start on the hour, at least an hour ahead, and no later than 17:00 New York time. Times are computed in the IANA zone, so the US daylight-saving change (1 Nov 2026) moves the window from 12:00–23:00 to 13:00–00:00 Lagos time.
-- **Exchange rates** are Nexford's published rates effective **1 October 2026**, fixed in `src/config/fx.ts`. Amounts are rounded to whole units; kobo = whole naira × 100.
+- **Exchange rates** are Nexford's published rates effective **1 October 2026** (paynxu.nexford.edu/fxrates), fixed in `src/config/tuition.ts`. Local prices are shown for Nigeria (NGN), Ghana (GHS), Kenya (KES) and Egypt (EGP). Amounts are rounded once to whole units (totals are worked out from the USD total); kobo = whole naira × 100.
 - **Test mode only.** The server won't start with a key that doesn't begin with `sk_test_`.
-- **Tuition** is only what's published: MBA/BBA for the US, Saudi Arabia, Kenya and Nigeria, plus US-only rates for the other programmes. Everything else returns `available: false` with the tuition calculator link.
+- **Tuition** uses the catalogue's four tiers, applied only to the example countries the catalogue lists (see "Pricing"). Undergraduate Career Pathways and pathway programmes (Constructor, San Francisco Bay, Capella) are priced separately and return `not_offered_via_tool`. The application fee is always quoted and charged in naira, because Paystack charges NGN. From 1 December 2026 (Lagos time), quotes include a note about Nexford's new payment model starting 1 January 2027.
 - **Programme names** are free text, matched to known programmes with aliases (`src/config/programmes.ts`). Anything unrecognised gets `advisor_review`.
 - **Economics** counts as a business background for every rule, including the MBA in Finance (the table lists only business, finance and accounting for that row).
 - **Foundation waivers** are only ever "can be requested" (3+ years of relevant experience; certifications are mentioned in the guidance but not captured as a field).

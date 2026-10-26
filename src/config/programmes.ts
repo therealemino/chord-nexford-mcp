@@ -1,121 +1,91 @@
-export type ProgrammeLevel = "master" | "bachelor" | "associate" | "certificate";
+import {
+  AMBIGUOUS_PROGRAMMES,
+  BBA_SPECIALISATIONS,
+  MBA_DEF,
+  MBA_FILLER,
+  MBA_SPECIALISATION_DEF,
+  MBA_SPECIALISATIONS,
+  NOT_OFFERED_PATTERNS,
+  PROGRAMME_STOPWORDS,
+  PROGRAMMES,
+  type ProgrammeDef,
+} from "./tuition.js";
 
-export type ProgrammeId =
-  | "mba"
-  | "mba_specialisation"
-  | "mba_finance"
-  | "mba_entrepreneurship"
-  | "ms_data_analytics"
-  | "ms_digital_transformation"
-  | "ms_ai_technology_management"
-  | "mini_mba"
-  | "bba"
-  | "bs_ai_for_business"
-  | "bas_management_ai"
-  | "aas_ai_for_business";
+export type { ProgrammeId, ProgrammeLevel } from "./tuition.js";
 
-export interface Programme {
-  id: ProgrammeId;
-  name: string;
-  level: ProgrammeLevel;
-  /** Set for MBA specialisations, e.g. "Fintech and Blockchain". */
+/** A recognised programme. `specialisation` is set for MBA and BBA specialisations, e.g. "Fintech and Blockchain". */
+export interface Programme extends ProgrammeDef {
   specialisation?: string;
-  /** Tested in order against the cleaned, lower-cased input. */
-  patterns: RegExp[];
 }
 
-// Order matters: more specific programmes first (Mini-MBA and MBA in Finance before MBA).
-export const PROGRAMMES: Programme[] = [
-  { id: "mini_mba", name: "Mini-MBA", level: "certificate", patterns: [/\bmini ?mba\b/] },
-  { id: "mba_finance", name: "MBA in Finance", level: "master", patterns: [/\bmba\b.*\bfinance\b/, /\bfinance\b.*\bmba\b/] },
-  {
-    id: "mba_entrepreneurship",
-    name: "MBA in Entrepreneurship",
-    level: "master",
-    patterns: [/\bmba\b.*\bentrepreneur/, /\bentrepreneur.*\bmba\b/],
-  },
-  {
-    id: "ms_data_analytics",
-    name: "MS Data Analytics",
-    level: "master",
-    patterns: [/\bmsda\b/, /\bdata analytics\b/],
-  },
-  {
-    id: "ms_digital_transformation",
-    name: "MS Digital Transformation",
-    level: "master",
-    patterns: [/\bmsdt\b/, /\bdigital transformation\b/],
-  },
-  {
-    id: "ms_ai_technology_management",
-    name: "MS AI and Technology Management",
-    level: "master",
-    patterns: [/\b(ai|artificial intelligence)\b.*\btechnology management\b/],
-  },
-  {
-    id: "bas_management_ai",
-    name: "BAS Management and AI",
-    level: "bachelor",
-    patterns: [/\bbas\b/, /\bapplied science\b.*\bmanagement\b/],
-  },
-  {
-    id: "aas_ai_for_business",
-    name: "AAS AI for Business",
-    level: "associate",
-    patterns: [/\baas\b/, /\bassociate\b/],
-  },
-  {
-    id: "bs_ai_for_business",
-    name: "BS AI for Business",
-    level: "bachelor",
-    patterns: [/\bbs\b.*\b(ai|artificial intelligence)\b/, /\bbachelor of science\b.*\b(ai|artificial intelligence)\b/],
-  },
-  { id: "bba", name: "BBA", level: "bachelor", patterns: [/\bbba\b/, /\bbachelor of business administration\b/] },
-];
+export type ProgrammeMatch =
+  | { kind: "match"; programme: Programme }
+  | { kind: "ambiguous"; candidates: string[] }
+  | { kind: "not_offered" }
+  | { kind: "unknown" };
 
-/** MBA specialisations: priced and assessed as the standard MBA. MBA in Finance and in Entrepreneurship are separate programmes. */
-export const MBA_SPECIALISATIONS: { name: string; pattern: RegExp }[] = [
-  { name: "AI", pattern: /\b(ai|artificial intelligence)\b/ },
-  { name: "Cybersecurity", pattern: /\bcyber ?security\b/ },
-  { name: "Enabling E-Commerce", pattern: /\be ?commerce\b/ },
-  { name: "Fintech and Blockchain", pattern: /\b(fintech|blockchain)\b/ },
-  { name: "International Business", pattern: /\binternational business\b/ },
-  { name: "Sustainability", pattern: /\bsustainab/ },
-  { name: "Healthcare Management", pattern: /\bhealth ?care\b/ },
-];
-
-const MBA_FILLER = new Set(["mba", "master", "masters", "of", "business", "administration", "in", "the", "a", "an",
-  "global", "online", "programme", "program", "degree", "general", "standard", "nexford"]);
-
-const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-
-const byId = (id: ProgrammeId) => ALL_PROGRAMMES.find((p) => p.id === id)!;
-
-const MBA: Programme = { id: "mba", name: "MBA", level: "master", patterns: [] };
-const MBA_SPECIALISATION: Programme = { id: "mba_specialisation", name: "MBA specialisation", level: "master", patterns: [] };
-export const ALL_PROGRAMMES: Programme[] = [MBA, MBA_SPECIALISATION, ...PROGRAMMES];
-
+export const ALL_PROGRAMMES: ProgrammeDef[] = [MBA_DEF, MBA_SPECIALISATION_DEF, ...PROGRAMMES];
 export const PROGRAMME_IDS = ALL_PROGRAMMES.map((p) => p.id);
+/** Canonical names, for "did you mean" lists. */
+export const KNOWN_PROGRAMME_NAMES = [MBA_DEF.name, "MBA with a specialisation (e.g. MBA in Fintech and Blockchain)", ...PROGRAMMES.map((p) => p.name)];
 
-/** "MBA with a Fintech and Blockchain specialisation", "MBA with an AI specialisation" */
-const specialisationName = (spec: string) => `MBA with ${/^[aeiou]/i.test(spec) ? "an" : "a"} ${spec} specialisation`;
+const STOPWORDS = new Set(PROGRAMME_STOPWORDS);
+const FILLER = new Set(MBA_FILLER);
 
-/**
- * Maps free text ("MBA", "MBA in Fintech", "ms_data_analytics") to a known programme.
- * Returns undefined for anything we don't recognise, including MBA variants that aren't published specialisations.
- */
+/** Lower-case, strip accents and punctuation, "&" → "and", drop filler words like "degree", "in", "of". */
+export function normaliseProgrammeText(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/['’.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w && !STOPWORDS.has(w))
+    .join(" ");
+}
+
+const withSpecialisation = (base: ProgrammeDef, prefix: string, spec: string): Programme => ({
+  ...base,
+  name: `${prefix} in ${spec}`,
+  specialisation: spec,
+});
+
+/** Maps free text ("MSDA", "MBA Fintech & Blockchain", "ms_data_analytics") to a programme, or says why it can't. */
+export function resolveProgramme(input: string | null | undefined): ProgrammeMatch {
+  if (!input?.trim()) return { kind: "unknown" };
+  const id = input.trim().toLowerCase();
+  const byId = ALL_PROGRAMMES.find((p) => p.id === id);
+  if (byId) return { kind: "match", programme: byId };
+
+  const text = normaliseProgrammeText(input);
+  if (!text) return { kind: "unknown" };
+  if (AMBIGUOUS_PROGRAMMES[text]) return { kind: "ambiguous", candidates: AMBIGUOUS_PROGRAMMES[text] };
+  if (NOT_OFFERED_PATTERNS.some((re) => re.test(text))) return { kind: "not_offered" };
+
+  const isMba =
+    /\bmba\b/.test(text) || /\bmasters? business administration\b/.test(text) || /^masters? business$/.test(text);
+  const named = PROGRAMMES.find((p) => p.patterns.some((re) => re.test(text)));
+  if (named?.id === "bba") {
+    const spec = BBA_SPECIALISATIONS.find((s) => s.pattern.test(text));
+    return { kind: "match", programme: spec ? withSpecialisation(named, "BBA", spec.name) : named };
+  }
+  // Named MBA variants (Mini-MBA, Finance, Entrepreneurship) win over the generic MBA handling.
+  if (named && (!isMba || /mba/.test(named.id))) return { kind: "match", programme: named };
+
+  if (isMba) {
+    const spec = MBA_SPECIALISATIONS.find((s) => s.pattern.test(text));
+    if (spec) return { kind: "match", programme: withSpecialisation(MBA_SPECIALISATION_DEF, "MBA", spec.name) };
+    if (text.split(" ").every((w) => FILLER.has(w))) return { kind: "match", programme: MBA_DEF };
+    return { kind: "unknown" };
+  }
+
+  return named ? { kind: "match", programme: named } : { kind: "unknown" };
+}
+
+/** The programme, or undefined if it isn't a single recognised programme. */
 export function findProgramme(input: string | null | undefined): Programme | undefined {
-  if (!input) return undefined;
-  const raw = input.trim().toLowerCase();
-  if ((PROGRAMME_IDS as string[]).includes(raw)) return byId(raw as ProgrammeId);
-
-  const text = clean(input);
-  const isMba = /\bmba\b/.test(text) || /\bmaster of business administration\b/.test(text);
-  if (!isMba) return PROGRAMMES.find((p) => p.patterns.some((re) => re.test(text)));
-
-  const named = PROGRAMMES.find((p) => p.patterns.some((re) => re.test(text))); // Mini-MBA, Finance, Entrepreneurship
-  if (named) return named;
-  const spec = MBA_SPECIALISATIONS.find((s) => s.pattern.test(text));
-  if (spec) return { ...MBA_SPECIALISATION, name: specialisationName(spec.name), specialisation: spec.name };
-  return text.split(" ").every((w) => MBA_FILLER.has(w)) ? MBA : undefined;
+  const m = resolveProgramme(input);
+  return m.kind === "match" ? m.programme : undefined;
 }

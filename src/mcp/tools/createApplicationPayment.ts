@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { APPLICATION_FEE_USD, PENDING_PAYMENT_REUSE_MINUTES } from "../../config/constants.js";
-import { toLocal, usdToKobo } from "../../config/fx.js";
+import { formatLocal, formatUsd, toLocal, usdToKobo } from "../../config/fx.js";
 import { advanceStatus } from "../../lib/leadStatus.js";
 import { log } from "../../lib/log.js";
 import { fail, ok } from "../../lib/result.js";
@@ -11,6 +11,7 @@ import { defineTool, type Deps } from "../types.js";
 const FEE_NGN = toLocal(APPLICATION_FEE_USD, "NGN");
 const FEE_KOBO = usdToKobo(APPLICATION_FEE_USD);
 const amounts = { amount_usd: APPLICATION_FEE_USD, amount_ngn: FEE_NGN };
+const FEE_TEXT = `${formatUsd(APPLICATION_FEE_USD)} (${formatLocal(FEE_NGN, "NGN")})`;
 
 const linkGuidance = (proactive: boolean) =>
   "Send this payment link and say it's a secure Paystack page. " +
@@ -28,8 +29,8 @@ const linkResult = (p: Payment, reused: boolean, deps: Deps) =>
 export const createApplicationPayment = defineTool({
   name: "create_application_payment",
   description: [
-    `Create a Paystack link for the $${APPLICATION_FEE_USD} (₦${FEE_NGN.toLocaleString("en-US")}) application fee.`,
-    "ONLY call this after you have told the person the fee is $25 (₦33,217), that it is non-refundable,",
+    `Create a Paystack link for the ${FEE_TEXT} application fee.`,
+    `ONLY call this after you have told the person the fee is ${FEE_TEXT}, that it is non-refundable,`,
     "and they have clearly said yes. Their full name and email must already be saved with save_lead.",
     "Safe to call again: it returns the existing link if one was created in the last 30 minutes, and never charges twice.",
   ].join(" "),

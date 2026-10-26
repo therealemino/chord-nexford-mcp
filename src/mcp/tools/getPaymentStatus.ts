@@ -1,3 +1,5 @@
+import { APPLICATION_FEE_USD } from "../../config/constants.js";
+import { formatUsd } from "../../config/fx.js";
 import { log } from "../../lib/log.js";
 import { ok } from "../../lib/result.js";
 import { reconcilePayment } from "../../services/payments.js";
@@ -7,7 +9,7 @@ import { defineTool } from "../types.js";
 const GUIDANCE: Record<string, string> = {
   none: "No application fee payment has been started. If they want to pay, confirm the fee first, then call create_application_payment.",
   pending: "The payment hasn't come through yet. Say so plainly; don't say it failed. If they've just paid, ask them to give it a minute and check again.",
-  success: "Confirm the $25 application fee has been received, thank them, and explain an Application Specialist will be in touch about next steps.",
+  success: `Confirm the ${formatUsd(APPLICATION_FEE_USD)} application fee has been received, thank them, and explain an Application Specialist will be in touch about next steps.`,
   failed: "The payment did not go through. Say so kindly and offer a new link (call create_application_payment) or an Application Specialist.",
   abandoned: "The payment wasn't completed. Offer a new link (call create_application_payment) if they still want to pay.",
 };

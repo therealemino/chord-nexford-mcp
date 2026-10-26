@@ -63,7 +63,7 @@ describe("handoff alert emails", () => {
     for (let i = 0; i < 2; i++) await request(app).post("/webhooks/paystack").set("content-type", "application/json").set("x-paystack-signature", sig).send(body);
     await callTool("get_payment_status", { contact_id: "c1" }, t.deps);
     await t.settle();
-    expect(t.email.sent.map((m) => m.subject)).toEqual(["[New applicant] Vander Silco paid the $25 fee for MBA with a Fintech and Blockchain specialisation"]);
+    expect(t.email.sent.map((m) => m.subject)).toEqual(["[New applicant] Vander Silco paid the $25 fee for MBA in Fintech and Blockchain"]);
     expect(t.email.sent[0].text).toContain(`Application fee: success (ref ${created.reference})`);
   });
 
